@@ -10,6 +10,7 @@ import { transcribe, speak } from './openai.js';
 import { coachTurn, personalOpener, summarizeSession } from './coach.js';
 import { compareSpoken } from './compare.js';
 import { scenarioById, publicScenarios } from './scenarios.js';
+import { startNudgeScheduler } from './nudges.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
@@ -47,7 +48,7 @@ function allowance(user) {
   }
   if (today >= config.dailySessionLimit) return { canStart: false, reason: 'daily_limit', plan: paid ? 'paid' : 'trial' };
   if (paid) return { canStart: true, plan: 'paid', remainingToday: config.dailySessionLimit - today };
-  const trialLeft = GUEST_SESSIONS + config.freeTrialSessions - total;
+  const trialLeft = GUEST_SESSIONS + config.freeTrialSessions + (user.bonus_sessions || 0) - total;
   return trialLeft > 0
     ? { canStart: true, plan: 'trial', remaining: trialLeft, remainingToday: config.dailySessionLimit - today }
     : { canStart: false, reason: 'trial_over', plan: 'trial' };
@@ -62,6 +63,9 @@ function publicUser(u) {
     jobRole: u.job_role,
     goals: u.goals,
     plan: u.plan,
+    dailyGoalMin: u.daily_goal_min,
+    reminders: !!u.reminders,
+    onboarded: !!u.onboarded,
   };
 }
 
@@ -92,8 +96,41 @@ api.get('/me', (req, res) => {
     warmup: store.warmupStatus(u.id),
     allowance: allowance(u),
     upgrade: { url: config.upgradeUrl, price: config.upgradePriceText },
+    insights: u.phone || store.getStats(u.id).sessionsDone ? store.weeklyInsights(u.id) : null,
+    nudge: store.latestNudge(u.id),
     mock: config.mockAi,
   });
+});
+
+api.post('/settings', (req, res) => {
+  const { dailyGoalMin, reminders, onboarded } = req.body || {};
+  const u = store.updateSettings(req.user.id, { dailyGoalMin, reminders, onboarded });
+  if (reminders !== undefined) logEvent(u.id, reminders ? 'reminders_on' : 'reminders_off');
+  res.json({ user: publicUser(u) });
+});
+
+api.post('/nudges/:id/read', (req, res) => {
+  store.markNudgeRead(req.user.id, Number(req.params.id));
+  res.json({ ok: true });
+});
+
+// ─── Invites ─────────────────────────────────────────────────
+api.get('/invite', (req, res) => {
+  const code = store.ensureRefCode(req.user.id);
+  const base = config.publicUrl || `${req.protocol}://${req.get('host')}`;
+  res.json({ code, url: `${base}/?ref=${code}`, bonus: config.referralBonusSessions, joined: store.referralCount(req.user.id) });
+});
+
+api.post('/referral', (req, res) => {
+  const ok = store.attachReferral(req.user.id, req.body?.code);
+  if (ok) logEvent(req.user.id, 'referral_attached');
+  res.json({ ok });
+});
+
+api.delete('/me', (req, res) => {
+  store.deleteUser(req.user.id);
+  logout(res);
+  res.json({ ok: true });
 });
 
 api.get('/scenarios', (req, res) => res.json(publicScenarios()));
@@ -113,7 +150,7 @@ api.post(
     if (!phone) throw httpError(400, 'Please enter a valid mobile number.');
     await requestOtp(phone, req.body?.channel);
     logEvent(req.user.id, 'otp_requested');
-    res.json({ ok: true, phone, provider: config.otpProvider === 'console' ? 'console' : 'sent' });
+    res.json({ ok: true, phone, provider: config.messageProvider === 'console' ? 'console' : 'sent' });
   }),
 );
 
@@ -123,7 +160,8 @@ api.post(
   wrap(async (req, res) => {
     const phone = normalizePhone(req.body?.phone);
     if (!phone || !req.body?.code) throw httpError(400, 'Enter the code we sent you.');
-    const u = verifyOtp(req, res, phone, req.body.code);
+    let u = verifyOtp(req, res, phone, req.body.code);
+    if (store.rewardReferral(u.id, config.referralBonusSessions)) u = store.getUser(u.id);
     res.json({ user: publicUser(u), stats: store.getStats(u.id) });
   }),
 );
@@ -346,7 +384,7 @@ api.post(
 );
 
 // ─── Pilot feedback & light analytics ────────────────────────
-const CLIENT_EVENTS = new Set(['correction_feedback', 'retry_skipped', 'replay_partner', 'replay_correction', 'login_prompt_shown', 'login_skipped', 'paywall_shown', 'upgrade_clicked']);
+const CLIENT_EVENTS = new Set(['correction_feedback', 'retry_skipped', 'replay_partner', 'replay_correction', 'login_prompt_shown', 'login_skipped', 'paywall_shown', 'upgrade_clicked', 'share_progress', 'invite_shared', 'handsfree_on', 'mic_primed']);
 api.post('/events', (req, res) => {
   const type = String(req.body?.type || '');
   if (!CLIENT_EVENTS.has(type)) return res.status(400).json({ error: 'unknown event' });
@@ -388,6 +426,9 @@ function pilotStats() {
     retries: { pass: ev('retry_pass'), fail: ev('retry_fail'), skipped: ev('retry_skipped') },
     correctionFeedback: { helpful: feedback.filter((f) => f.helpful).length, notHelpful: feedback.filter((f) => f.helpful === false).length },
     warmupsDone: ev('warmup_done'),
+    nudgesSent: ev('nudge_sent'),
+    referralsRewarded: ev('referral_rewarded'),
+    remindersOn: count('SELECT COUNT(*) AS n FROM users WHERE reminders = 1'),
     retentionDay3: retention(3),
     retentionDay7: retention(7),
     learners: users.map((u) => ({
@@ -422,6 +463,7 @@ app.use((err, req, res, _next) => {
 export { app };
 
 if (process.argv[1] && fileURLToPath(import.meta.url) === path.resolve(process.argv[1])) {
+  startNudgeScheduler();
   app.listen(config.port, () => {
     console.log(`Base in English running on http://localhost:${config.port}${config.mockAi ? '  (MOCK_AI mode – no OpenAI calls)' : ''}`);
   });

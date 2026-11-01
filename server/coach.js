@@ -251,3 +251,31 @@ function mockTurn(transcript, finalTurn) {
     learned: [],
   };
 }
+
+// ─── 4. Proactive personal nudge (WhatsApp-style) ────────────
+const NUDGE_SCHEMA = {
+  type: 'object',
+  additionalProperties: false,
+  required: ['message'],
+  properties: { message: { type: 'string', description: 'The WhatsApp message, max ~240 characters.' } },
+};
+
+export async function nudgeMessage({ user, summaries, topMistakes, streak }) {
+  const system = `${PERSONA}
+${memoryBlock(user, summaries, topMistakes)}
+
+Write ONE short, warm WhatsApp message from Base to this learner, like a friend checking in — not marketing.
+- If you remember something specific (an interview, a meeting, a trip, a "function"), ask how it went or wish them luck.
+- Otherwise invite them to a quick 5-minute chat, maybe about one habit they're working on.
+- Their current streak is ${streak} day(s); mention it only if it is 2 or more.
+- Simple English. You may add ONE short Malayalam phrase in Malayalam script. Max 240 characters. No links, no hashtags, at most one emoji.`;
+  const r = await chatJson({
+    system,
+    messages: [{ role: 'user', content: 'Write today\'s message.' }],
+    schemaName: 'nudge',
+    schema: NUDGE_SCHEMA,
+    maxTokens: 200,
+    mock: () => ({ message: `Hi${user?.name ? ' ' + user.name : ''}! 5 minutes of speaking today? Base is ready when you are 🙂` }),
+  });
+  return r.message.slice(0, 300);
+}

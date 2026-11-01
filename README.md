@@ -13,7 +13,8 @@ npm start                 # http://localhost:3000
 Requires **Node 22.13+**. The database uses the built-in `node:sqlite`, so there are no native modules to compile. Data is stored in `./data/` (SQLite DB + cached TTS audio).
 
 - `npm run mock` runs the UI without OpenAI, using canned replies. Use it for clicking through screens.
-- `npm test` runs the comparison unit tests and an end-to-end API test in mock mode.
+- `npm test` runs the comparison unit tests and end-to-end API tests in mock mode.
+- `npm run nudges` sends today's personal check-in messages (add `-- --dry-run` to only create the in-app cards).
 
 > Microphone access needs **HTTPS** (or `localhost`). For phones on a pilot, deploy behind HTTPS and set `COOKIE_SECURE=1`.
 
@@ -37,11 +38,32 @@ All the teaching logic (persona, the "one fix" rules, the list of common Malayal
 - **Progress:** streak (India time), days practised, minutes spoken out loud, and old mistakes fixed. No fluency scores.
 - **Allowance:** 1 guest session, then `FREE_TRIAL_SESSIONS` after login, with `DAILY_SESSION_LIMIT` per day. To give someone the paid pass, run `UPDATE users SET plan='paid', plan_until='2027-01-01' WHERE phone='+91…';` in `data/app.db`. The upgrade button links to `UPGRADE_URL`.
 
-## Login / OTP
+## Login, reminders & messaging
 
-- `OTP_PROVIDER=console` (default) prints codes in the server log. This is fine for local testing or for hand-holding a small pilot.
-- `OTP_PROVIDER=twilio_whatsapp` or `twilio_sms` sends codes via Twilio. Fill in `TWILIO_*`.
+- `MESSAGE_PROVIDER=console` (default) prints codes and reminders in the server log. This is fine for local testing or for hand-holding a small pilot.
+- `twilio_whatsapp` or `twilio_sms` sends via Twilio. Fill in `TWILIO_*`.
+- `webhook` POSTs `{to, text, kind}` to `MESSAGE_WEBHOOK_URL`. Use this for Zoho CPaaS or any Indian WhatsApp provider.
 - `OTP_TEST_NUMBERS` + `OTP_TEST_CODE` set a fixed code for specific test phones.
+
+**Proactive check-ins:** learners who turn on reminders (onboarding or Settings) get one short, personal message on days they haven't practised. The message is written from Base's memory of them, e.g. "How did your interview go?". Set `NUDGE_HOUR` to send these automatically, or run `npm run nudges` from a cron job. The message also appears in the app as a card from Base. Note: WhatsApp business-initiated messages usually need an approved template with your provider.
+
+## Growth & retention features
+
+- **Daily goal** (5/10/15 min) with a progress ring on the home screen, plus a 7-day streak strip.
+- **Weekly speaking insights** instead of a fluency score: words per reply (vs last week), replies with no fix needed, Malayalam words used (fewer over time means a growing vocabulary), and old mistakes mastered.
+- **Invite a friend:** each learner gets a link (`/?ref=CODE`). When the friend verifies their phone, both get `REFERRAL_BONUS_SESSIONS` free sessions.
+- **Share my progress:** generates a branded 1080×1350 image for WhatsApp status or Instagram stories, with the learner's invite link.
+- **Settings:** daily goal, reminders, profile, plan, help, privacy policy, terms and the 10-day refund promise, log out, and delete account and data. Fill in the `[COMPANY NAME]` / `[CONTACT]` placeholders in `public/app.js` (`renderLegal`) before launch.
+
+## UX details
+
+- **Try first, sign in later:** no signup wall. The login prompt comes right after the first win.
+- **Permission priming:** before the browser's microphone prompt, the app explains in English and Malayalam why it needs the mic and that recordings aren't kept.
+- **Hands-free mode** (headset button in a conversation): Base listens automatically after speaking and sends when the learner pauses for about 2 seconds, like a phone call. Tap-to-talk stays the default for nervous beginners.
+- **Instant feedback:** the learner's bubble appears immediately with a live waveform while their speech is transcribed.
+- **One fix at a time**, which must be said aloud, with the option to move on after 2 tries.
+- **Accessibility:** 44px+ touch targets, visible focus rings, screen-reader labels on icon buttons, live-region hints, and focus moves to each new screen's heading. Reduced-motion settings are respected.
+- **Installable:** works as an app from the home screen. A service worker serves the app shell offline (over HTTPS).
 
 ## Pilot dashboard
 
@@ -56,7 +78,9 @@ server/
   scenarios.js  the 6 Day-1 scenarios
   openai.js     STT / chat / TTS via fetch (+ mock mode)
   compare.js    lenient "did they say the corrected sentence?" check
-  auth.js       guest cookie, phone OTP, Twilio
+  auth.js       guest cookie, phone OTP
+  messaging.js  WhatsApp/SMS sending (console, Twilio, webhook)
+  nudges.js     daily personal check-in messages
   db.js         SQLite schema + queries (streaks, mistake bank, sessions)
 public/         mobile-first SPA, no build step (index.html, app.js, styles.css)
 test/           node:test suites

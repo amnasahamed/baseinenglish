@@ -3,6 +3,7 @@
 // Verifying a phone number turns that guest into a saved account (or merges it into an existing one).
 import crypto from 'node:crypto';
 import { config } from './config.js';
+import { sendMessage } from './messaging.js';
 import { db, createUser, getUser, getUserByPhone, mergeUsers, touchUser, logEvent } from './db.js';
 
 const COOKIE = 'bie_uid';
@@ -84,25 +85,10 @@ export async function requestOtp(phone, channel) {
 }
 
 async function deliverOtp(phone, code, channel) {
-  const text = `${code} is your Base in English login code. It expires in 10 minutes.`;
-  const provider = config.otpProvider;
-  if (provider === 'console' || !config.twilioSid) {
-    console.log(`[otp] ${phone} → ${code}`);
-    return;
-  }
-  const useWhatsApp = provider === 'twilio_whatsapp' && channel !== 'sms';
-  const from = useWhatsApp && !config.twilioFrom.startsWith('whatsapp:') ? `whatsapp:${config.twilioFrom}` : config.twilioFrom;
-  const to = useWhatsApp ? `whatsapp:${phone}` : phone;
-  const res = await fetch(`https://api.twilio.com/2010-04-01/Accounts/${config.twilioSid}/Messages.json`, {
-    method: 'POST',
-    headers: {
-      Authorization: 'Basic ' + Buffer.from(`${config.twilioSid}:${config.twilioToken}`).toString('base64'),
-      'Content-Type': 'application/x-www-form-urlencoded',
-    },
-    body: new URLSearchParams({ From: from, To: to, Body: text }),
-  });
-  if (!res.ok) {
-    console.error('[otp] Twilio error', res.status, (await res.text()).slice(0, 300));
+  try {
+    await sendMessage(phone, `${code} is your Base in English login code. It expires in 10 minutes.`, { kind: 'otp', channel });
+  } catch (e) {
+    console.error('[otp]', e.message);
     const err = new Error('Could not send the code right now. Please try again.');
     err.status = 502;
     throw err;

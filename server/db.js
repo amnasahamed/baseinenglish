@@ -90,6 +90,32 @@ CREATE TABLE IF NOT EXISTS events (
 CREATE INDEX IF NOT EXISTS idx_events_type ON events(type, created_at);
 `);
 
+// ─── Additive migrations (safe to run on every start) ───────
+function addColumn(table, col, def) {
+  const cols = db.prepare(`PRAGMA table_info(${table})`).all().map((c) => c.name);
+  if (!cols.includes(col)) db.exec(`ALTER TABLE ${table} ADD COLUMN ${col} ${def}`);
+}
+addColumn('users', 'daily_goal_min', 'INTEGER NOT NULL DEFAULT 5');
+addColumn('users', 'reminders', 'INTEGER NOT NULL DEFAULT 0');
+addColumn('users', 'onboarded', 'INTEGER NOT NULL DEFAULT 0');
+addColumn('users', 'ref_code', 'TEXT');
+addColumn('users', 'referred_by', 'TEXT');
+addColumn('users', 'referral_rewarded', 'INTEGER NOT NULL DEFAULT 0');
+addColumn('users', 'bonus_sessions', 'INTEGER NOT NULL DEFAULT 0');
+db.exec(`
+CREATE UNIQUE INDEX IF NOT EXISTS idx_users_ref ON users(ref_code);
+CREATE TABLE IF NOT EXISTS nudges (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  text TEXT NOT NULL,
+  channel TEXT NOT NULL DEFAULT 'app',
+  day TEXT NOT NULL,
+  created_at TEXT NOT NULL,
+  read_at TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_nudges_user ON nudges(user_id, id);
+`);
+
 export const now = () => new Date().toISOString();
 export const newId = (prefix = '') => prefix + crypto.randomBytes(12).toString('base64url');
 
@@ -180,12 +206,14 @@ export function mergeUsers(fromId, intoId) {
     }
     const from = getUser(fromId);
     const into = getUser(intoId);
-    db.prepare('UPDATE users SET name = COALESCE(name, ?), job_role = COALESCE(job_role, ?), goals = COALESCE(goals, ?) WHERE id = ?').run(
+    db.prepare('UPDATE users SET name = COALESCE(name, ?), job_role = COALESCE(job_role, ?), goals = COALESCE(goals, ?), referred_by = COALESCE(referred_by, ?) WHERE id = ?').run(
       from?.name ?? null,
       from?.job_role ?? null,
       from?.goals ?? null,
+      from?.referred_by && from.referred_by !== intoId ? from.referred_by : null,
       intoId,
     );
+    db.prepare('UPDATE nudges SET user_id = ? WHERE user_id = ?').run(intoId, fromId);
     if (from && into) {
       const facts = [...safeJson(into.facts, []), ...safeJson(from.facts, [])].slice(-12);
       db.prepare('UPDATE users SET facts = ? WHERE id = ?').run(JSON.stringify(facts), intoId);
@@ -241,6 +269,7 @@ export function getStats(userId) {
     mistakesMastered: m.mastered || 0,
     sessionsDone,
     week,
+    secondsToday: days.find((d) => d.day === today)?.seconds || 0,
   };
 }
 
@@ -361,4 +390,123 @@ export function safeJson(s, fallback) {
   } catch {
     return fallback;
   }
+}
+
+// ─── Settings, referrals, account ────────────────────────────
+export function updateSettings(id, { dailyGoalMin, reminders, onboarded }) {
+  const u = getUser(id);
+  if (!u) return null;
+  const goal = [5, 10, 15, 20].includes(Number(dailyGoalMin)) ? Number(dailyGoalMin) : u.daily_goal_min;
+  const rem = reminders === undefined ? u.reminders : reminders ? 1 : 0;
+  const onb = onboarded ? 1 : u.onboarded;
+  db.prepare('UPDATE users SET daily_goal_min = ?, reminders = ?, onboarded = ? WHERE id = ?').run(goal, rem, onb, id);
+  return getUser(id);
+}
+
+const REF_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+export function ensureRefCode(id) {
+  const u = getUser(id);
+  if (u.ref_code) return u.ref_code;
+  for (let i = 0; i < 10; i++) {
+    const code = Array.from(crypto.randomBytes(6), (b) => REF_ALPHABET[b % REF_ALPHABET.length]).join('');
+    try {
+      db.prepare('UPDATE users SET ref_code = ? WHERE id = ?').run(code, id);
+      return code;
+    } catch {}
+  }
+  throw new Error('Could not create invite code');
+}
+
+/** Remember who invited this learner (only once, never yourself). */
+export function attachReferral(userId, code) {
+  const u = getUser(userId);
+  const clean = String(code || '').toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 12);
+  if (!u || u.referred_by || !clean) return false;
+  const inviter = db.prepare('SELECT id FROM users WHERE ref_code = ?').get(clean);
+  if (!inviter || inviter.id === userId) return false;
+  db.prepare('UPDATE users SET referred_by = ? WHERE id = ?').run(inviter.id, userId);
+  return true;
+}
+
+/** When an invited learner verifies their phone, both get bonus sessions (once). */
+export function rewardReferral(userId, bonus) {
+  const u = getUser(userId);
+  if (!u?.referred_by || u.referral_rewarded || !u.phone) return false;
+  db.prepare('UPDATE users SET referral_rewarded = 1, bonus_sessions = bonus_sessions + ? WHERE id = ?').run(bonus, userId);
+  db.prepare('UPDATE users SET bonus_sessions = bonus_sessions + ? WHERE id = ?').run(bonus, u.referred_by);
+  logEvent(u.referred_by, 'referral_rewarded', { invited: userId, bonus });
+  return true;
+}
+
+export function referralCount(userId) {
+  return db.prepare('SELECT COUNT(*) AS n FROM users WHERE referred_by = ? AND referral_rewarded = 1').get(userId).n;
+}
+
+export function deleteUser(id) {
+  db.prepare('DELETE FROM events WHERE user_id = ?').run(id);
+  db.prepare('DELETE FROM users WHERE id = ?').run(id); // cascades to sessions, messages, mistakes, days, nudges
+}
+
+export function secondsToday(userId) {
+  return db.prepare('SELECT seconds FROM practice_days WHERE user_id = ? AND day = ?').get(userId, dayOf())?.seconds || 0;
+}
+
+// ─── Weekly insights (honest, behaviour-based — no "fluency %") ──
+export function weeklyInsights(userId) {
+  const since = (days) => new Date(Date.now() - days * 86400000).toISOString();
+  const rows = db
+    .prepare(
+      `SELECT m.text, m.meta, m.created_at FROM messages m JOIN sessions s ON s.id = m.session_id
+       WHERE s.user_id = ? AND m.role = 'learner' AND m.created_at >= ?`,
+    )
+    .all(userId, since(14));
+  const week = { replies: 0, words: 0, lifeline: 0, corrected: 0 };
+  const prev = { replies: 0, words: 0, lifeline: 0, corrected: 0 };
+  const cut = since(7);
+  for (const r of rows) {
+    const b = r.created_at >= cut ? week : prev;
+    const meta = safeJson(r.meta, {});
+    b.replies++;
+    b.words += (r.text.match(/[A-Za-z']+/g) || []).length;
+    b.lifeline += (meta.lifeline || []).length;
+    if (meta.mistakeId) b.corrected++;
+  }
+  const avg = (b) => (b.replies ? Math.round((b.words / b.replies) * 10) / 10 : 0);
+  const mastered = db
+    .prepare('SELECT COUNT(*) AS n FROM mistakes WHERE user_id = ? AND mastered = 1 AND last_practiced_at >= ?')
+    .get(userId, cut).n;
+  const days = db.prepare('SELECT COUNT(*) AS n FROM practice_days WHERE user_id = ? AND day >= ?').get(userId, dayOf(new Date(Date.now() - 6 * 86400000))).n;
+  return {
+    replies: week.replies,
+    wordsPerReply: avg(week),
+    wordsPerReplyPrev: avg(prev),
+    lifelineWords: week.lifeline,
+    lifelineWordsPrev: prev.lifeline,
+    cleanReplyRate: week.replies ? Math.round(((week.replies - week.corrected) / week.replies) * 100) : 0,
+    masteredThisWeek: mastered,
+    daysThisWeek: days,
+  };
+}
+
+// ─── Nudges (proactive personal messages) ────────────────────
+export function latestNudge(userId) {
+  return db.prepare('SELECT id, text, created_at FROM nudges WHERE user_id = ? AND read_at IS NULL ORDER BY id DESC LIMIT 1').get(userId) ?? null;
+}
+export function markNudgeRead(userId, id) {
+  db.prepare('UPDATE nudges SET read_at = ? WHERE id = ? AND user_id = ?').run(now(), id, userId);
+}
+export function addNudge(userId, text, channel) {
+  db.prepare('INSERT INTO nudges (user_id, text, channel, day, created_at) VALUES (?, ?, ?, ?, ?)').run(userId, text, channel, dayOf(), now());
+}
+export function nudgeCandidates() {
+  const today = dayOf();
+  return db
+    .prepare(
+      `SELECT u.* FROM users u
+       WHERE u.phone IS NOT NULL AND u.reminders = 1
+         AND NOT EXISTS (SELECT 1 FROM practice_days d WHERE d.user_id = u.id AND d.day = ?)
+         AND NOT EXISTS (SELECT 1 FROM nudges n WHERE n.user_id = u.id AND n.day = ?)
+         AND EXISTS (SELECT 1 FROM sessions s WHERE s.user_id = u.id AND s.done = 1)`,
+    )
+    .all(today, today);
 }

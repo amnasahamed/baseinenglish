@@ -66,6 +66,16 @@ const I = {
   trophy: (s) => svg('<path d="M8 21h8M12 17v4M7 4h10v5a5 5 0 0 1-10 0zM7 6H4a3 3 0 0 0 3 4M17 6h3a3 3 0 0 1-3 4"/>', { size: s || 36 }),
   moon: (s) => svg('<path d="M20 14.5A8 8 0 1 1 9.5 4a6.5 6.5 0 0 0 10.5 10.5z"/>', { size: s || 36 }),
   sparkle: (s) => svg('<path d="M12 3l2 6 6 2-6 2-2 6-2-6-6-2 6-2z"/>', { size: s || 36 }),
+  headset: (s) => svg('<path d="M4 14v-2a8 8 0 0 1 16 0v2M4 14a2 2 0 0 1 2-2h1v7H6a2 2 0 0 1-2-2zM20 14a2 2 0 0 0-2-2h-1v7h1a2 2 0 0 0 2-2z"/>', { size: s || 20 }),
+  share: (s) => svg('<path d="M12 3v12M7 8l5-5 5 5M5 13v6a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-6"/>', { size: s || 20 }),
+  gift: (s) => svg('<rect x="3" y="8" width="18" height="4" rx="1"/><path d="M12 8v13M5 12v7a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-7M12 8S10.5 3 8 3a2.5 2.5 0 0 0 0 5M12 8s1.5-5 4-5a2.5 2.5 0 0 1 0 5"/>', { size: s || 22 }),
+  bell: (s) => svg('<path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9M10.3 21a1.9 1.9 0 0 0 3.4 0"/>', { size: s || 22 }),
+  shield: (s) => svg('<path d="M12 3l8 3v6c0 5-3.5 8-8 9-4.5-1-8-4-8-9V6z"/>', { size: s || 22 }),
+  info: (s) => svg('<circle cx="12" cy="12" r="9"/><path d="M12 11v6M12 7.5h.01"/>', { size: s || 22 }),
+  chat: (s) => svg('<path d="M21 12a8 8 0 0 1-11.8 7L4 20l1.1-4.5A8 8 0 1 1 21 12z"/>', { size: s || 22 }),
+  trash: (s) => svg('<path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13"/>', { size: s || 22 }),
+  target: (s) => svg('<circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="5"/><circle cx="12" cy="12" r="1"/>', { size: s || 22 }),
+  trend: (s) => svg('<path d="M3 17l6-6 4 4 8-8M15 7h6v6"/>', { size: s || 20 }),
 };
 const CAT_ICON = { interview: I.briefcase, office: I.building, daily: I.cup };
 const LOGO = `<span class="logo"><svg width="20" height="20" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7a4 4 0 0 1 4-4h8a4 4 0 0 1 4 4v6a4 4 0 0 1-4 4h-4l-5 4v-4.2A4 4 0 0 1 4 13z" fill="#FBF6EC"/><circle cx="9" cy="10" r="1.4" fill="#E2A93B"/><circle cx="12" cy="10" r="1.4" fill="#E2A93B"/><circle cx="15" cy="10" r="1.4" fill="#E2A93B"/></svg></span>`;
@@ -234,9 +244,11 @@ const recorder = new Recorder();
  * Turns a button into a tap-to-talk control. Calls onAudio({blob,type,duration}) when the learner taps stop.
  * Returns {setBusy, isRecording, cancel}.
  */
-function micControl(btn, { onAudio, onState, maxSec = 120, icon = MIC_SVG }) {
+function micControl(btn, { onAudio, onState, maxSec = 120, icon = MIC_SVG, autoStop }) {
   let recording = false;
   let timer;
+  let heard = false;
+  let lastLoud = 0;
   const ring = btn.querySelector('.ring');
   const setUi = (state) => {
     recording = state === 'recording';
@@ -250,10 +262,25 @@ function micControl(btn, { onAudio, onState, maxSec = 120, icon = MIC_SVG }) {
     if (btn.disabled) return;
     if (!recording) {
       stopSpeaking();
+      if (!(await primeMic())) return;
+      heard = false;
+      lastLoud = performance.now();
       try {
-        await recorder.start((lvl) => btn.querySelector('.ring')?.style.setProperty('--lvl', String(1 + lvl * 0.5)));
+        await recorder.start((lvl) => {
+          btn.querySelector('.ring')?.style.setProperty('--lvl', String(1 + lvl * 0.5));
+          // Hands-free: stop by itself after ~2.2s of quiet once the learner has spoken.
+          if (!autoStop?.() || !recording) return;
+          const t = performance.now();
+          if (lvl > 0.12) {
+            heard = true;
+            lastLoud = t;
+          } else if (heard && t - lastLoud > 2200) {
+            heard = false;
+            btn.click();
+          }
+        });
       } catch (e) {
-        toast(e.name === 'NotAllowedError' ? 'Please allow microphone access to practise speaking 🎙️' : 'Could not start the microphone.');
+        toast(e.name === 'NotAllowedError' ? 'Microphone is blocked. Allow it in your browser settings to practise speaking.' : 'Could not start the microphone.');
         return;
       }
       setUi('recording');
@@ -268,13 +295,16 @@ function micControl(btn, { onAudio, onState, maxSec = 120, icon = MIC_SVG }) {
       setUi('idle');
       const out = await recorder.stop();
       if (!out || out.duration < 0.7 || out.blob.size < 1200) {
-        toast('Tap once to start, speak, then tap again when you are done 🙂');
+        toast('Tap once to start, speak, then tap again when you are done.');
         return;
       }
       onAudio(out);
     }
   });
   return {
+    start() {
+      if (!recording && !btn.disabled) btn.click();
+    },
     cancel() {
       clearInterval(timer);
       recorder.cancel();
@@ -295,6 +325,60 @@ function audioForm(out, fields = {}) {
   return f;
 }
 
+// ─── Preferences (this device only) ──────────────────────────
+const prefs = {
+  get(k, d) {
+    try {
+      const v = localStorage.getItem('bie:' + k);
+      return v === null ? d : JSON.parse(v);
+    } catch {
+      return d;
+    }
+  },
+  set(k, v) {
+    try {
+      localStorage.setItem('bie:' + k, JSON.stringify(v));
+    } catch {}
+  },
+};
+
+/** Permission priming: explain why we need the mic before the browser's scary prompt. */
+async function primeMic() {
+  if (prefs.get('micPrimed', false)) return true;
+  try {
+    const st = await navigator.permissions?.query({ name: 'microphone' });
+    if (st?.state === 'granted') {
+      prefs.set('micPrimed', true);
+      return true;
+    }
+  } catch {}
+  return new Promise((resolve) => {
+    const sheet = h(`<div class="sheet-wrap" role="dialog" aria-modal="true" aria-labelledby="mic-t">
+      <div class="sheet">
+        <div class="sheet-art">${I.mic(40)}</div>
+        <h2 id="mic-t">Base needs to hear you</h2>
+        <p class="ml" style="margin:0 0 6px">നിങ്ങൾ സംസാരിക്കുന്നത് കേൾക്കാൻ mic വേണം.</p>
+        <p class="small" style="margin:0 0 18px">Only the words you say are kept, as text — never your recording. Next, your phone will ask: tap <b>Allow</b>.</p>
+        <button class="btn block" data-ok>Turn on microphone</button>
+        <button class="btn ghost block" data-no>Not now</button>
+      </div></div>`);
+    const close = (v) => {
+      sheet.classList.add('out');
+      setTimeout(() => sheet.remove(), 200);
+      if (v) {
+        prefs.set('micPrimed', true);
+        track('mic_primed');
+      }
+      resolve(v);
+    };
+    sheet.querySelector('[data-ok]').addEventListener('click', () => close(true));
+    sheet.querySelector('[data-no]').addEventListener('click', () => close(false));
+    sheet.addEventListener('click', (e) => e.target === sheet && close(false));
+    document.body.append(sheet);
+    sheet.querySelector('[data-ok]').focus();
+  });
+}
+
 // ─── App state & routing ─────────────────────────────────────
 const state = { me: null, scenarios: null, cleanup: null };
 
@@ -309,7 +393,11 @@ const routes = [
   [/^#\/bank$/, renderBank],
   [/^#\/warmup$/, renderWarmup],
   [/^#\/login$/, renderLogin],
-  [/^#\/profile$/, renderProfile],
+  [/^#\/profile$/, renderSettings],
+  [/^#\/settings$/, renderSettings],
+  [/^#\/invite$/, renderInvite],
+  [/^#\/privacy$/, () => renderLegal('privacy')],
+  [/^#\/terms$/, () => renderLegal('terms')],
   [/^#\/upgrade$/, renderUpgrade],
 ];
 
@@ -327,8 +415,14 @@ async function router() {
       } catch (e) {
         console.error(e);
         $app.innerHTML = '';
-        $app.append(h(`<div class="empty"><div class="e">😕</div><p>${esc(e.message)}</p><button class="btn" onclick="location.reload()">Try again</button></div>`));
+        $app.append(emptyState(I.sparkle(), 'Something went wrong', esc(e.message), `<button class="btn" onclick="location.reload()">Try again</button>`));
       }
+      // Gentle screen entrance + move focus to the new screen's heading for screen readers.
+      $app.classList.remove('enter');
+      void $app.offsetWidth;
+      $app.classList.add('enter');
+      $app.querySelector('h1')?.setAttribute('tabindex', '-1');
+      if (document.activeElement === document.body || !$app.contains(document.activeElement)) $app.querySelector('h1')?.focus({ preventScroll: true });
       return;
     }
   }
@@ -345,7 +439,7 @@ function topbar({ back } = {}) {
     ${back ? `<button class="round-btn" data-back aria-label="Back">${I.back()}</button>` : `<a class="brand" href="#/">${LOGO}<span class="wordmark">base<i>.</i></span></a>`}
     <span class="spacer"></span>
     ${streak ? `<span class="pill" title="Days in a row" style="color:var(--gold-ink)">${I.flame()}<span style="color:var(--ink)">${streak}</span></span>` : ''}
-    ${me?.user?.isGuest ? `<a class="pill outline" href="#/login">Log in</a>` : `<a class="initial" href="#/profile" aria-label="Your profile">${esc(initial || '•')}</a>`}
+    ${me?.user?.isGuest ? `<a class="pill outline" href="#/login">Log in</a>` : `<a class="initial" href="#/settings" aria-label="Settings">${esc(initial || '•')}</a>`}
   </header>`);
   el.querySelector('[data-back]')?.addEventListener('click', () => (history.length > 1 ? history.back() : go('#/')));
   return el;
@@ -356,7 +450,30 @@ function emptyState(icon, title, text, cta = '') {
 }
 
 // ─── Home ────────────────────────────────────────────────────
+function goalRing(sec, goalMin) {
+  const pct = Math.min(1, sec / (goalMin * 60));
+  const C = 2 * Math.PI * 26;
+  const done = pct >= 1;
+  return `<div class="ring-wrap" role="img" aria-label="${Math.floor(sec / 60)} of ${goalMin} minutes spoken today">
+    <svg width="64" height="64" viewBox="0 0 64 64" aria-hidden="true"><circle cx="32" cy="32" r="26" fill="none" stroke="#24332f" stroke-width="7"/>
+    <circle cx="32" cy="32" r="26" fill="none" stroke="${done ? '#E2A93B' : '#E2A93B'}" stroke-width="7" stroke-linecap="round" stroke-dasharray="${C}" stroke-dashoffset="${C * (1 - pct)}" stroke-opacity="${pct > 0.01 ? 1 : 0}" transform="rotate(-90 32 32)" class="ring-arc"/></svg>
+    <span class="ring-in">${done ? I.check(18) : `${Math.floor(sec / 60)}<small>/${goalMin}</small>`}</span></div>`;
+}
+
+function trendLine(now, prev, unit, betterWhenLower = false) {
+  if (!prev) return '';
+  const diff = Math.round((now - prev) * 10) / 10;
+  if (!diff) return `<span class="trend flat">same as last week</span>`;
+  const good = betterWhenLower ? diff < 0 : diff > 0;
+  return `<span class="trend ${good ? 'up' : 'flat'}">${diff > 0 ? '+' : ''}${diff}${unit} vs last week</span>`;
+}
+
+function skeletonHome() {
+  $app.innerHTML = `<div class="skel" aria-hidden="true"><div class="sk sk-bar" style="width:90px"></div><div class="sk" style="height:38px;width:70%;margin-top:28px"></div><div class="sk" style="height:16px;width:85%;margin-top:12px"></div><div class="sk" style="height:150px;margin-top:20px;border-radius:26px"></div><div class="sk" style="height:110px;margin-top:14px;border-radius:22px"></div></div>`;
+}
+
 async function renderHome() {
+  if (!state.me) skeletonHome();
   const [me, sc] = await Promise.all([loadMe(), state.scenarios || api('/scenarios')]);
   state.scenarios = sc;
   const s = me.stats;
@@ -402,12 +519,20 @@ async function renderHome() {
           <div class="streak-top">
             <span style="color:var(--gold)">${I.flame(34)}</span>
             <span class="n">${s.streak}</span><span class="l">day streak</span>
-            <span class="side"><b>${s.minutesSpoken}</b> min spoken<br /><b>${s.mistakesMastered}</b> mistakes fixed</span>
+            <span class="side">${goalRing(s.secondsToday, me.user.dailyGoalMin || 5)}<span class="goal-l">today's goal</span></span>
           </div>
           <div class="week">${week}</div>
         </div>
       </section>`),
     );
+    if (me.nudge) {
+      const n = h(`<div class="nudge" role="status">${avatar()}<div class="b"><div class="who">Base</div>${esc(me.nudge.text)}</div><button class="x" aria-label="Dismiss">${I.close(14)}</button></div>`);
+      n.querySelector('.x').addEventListener('click', () => {
+        api(`/nudges/${me.nudge.id}/read`, { method: 'POST' }).catch(() => {});
+        n.remove();
+      });
+      $app.append(n);
+    }
     if (me.warmup.due) {
       $app.append(
         h(`<a class="feature gold" href="#/warmup"><span class="ic" style="color:var(--gold)">${I.bolt()}</span><span><b>2-minute warm-up</b><span class="s">${me.warmup.pending} of your own mistakes</span></span><span class="go">${I.chev(22)}</span></a>`),
@@ -422,6 +547,23 @@ async function renderHome() {
         )
         .join('')}</div>`),
     );
+    const ins = me.insights;
+    if (ins && ins.replies) {
+      $app.append(h(`<h2>Your speaking this week</h2>`));
+      $app.append(
+        h(`<div class="insights">
+          <div class="ins"><div class="v">${ins.wordsPerReply}</div><div class="l">words per reply</div>${trendLine(ins.wordsPerReply, ins.wordsPerReplyPrev, '')}<div class="hint">Longer answers = more confidence</div></div>
+          <div class="ins"><div class="v">${ins.cleanReplyRate}<small>%</small></div><div class="l">replies with no fix needed</div><div class="hint">${ins.replies} replies this week</div></div>
+          <div class="ins"><div class="v">${ins.lifelineWords}</div><div class="l">Malayalam words used</div>${trendLine(ins.lifelineWords, ins.lifelineWordsPrev, '', true)}<div class="hint">Fewer over time = growing vocabulary</div></div>
+          <div class="ins"><div class="v">${ins.masteredThisWeek}</div><div class="l">old mistakes mastered</div><div class="hint">${ins.daysThisWeek}/7 days practised</div></div>
+        </div>`),
+      );
+    }
+    if (!me.user.isGuest) {
+      $app.append(
+        h(`<a class="feature invite" href="#/invite"><span class="ic" style="background:var(--gold-soft);color:var(--gold-ink)">${I.gift()}</span><span><b>Practise with a friend</b><span class="s">Invite someone — you both get free sessions</span></span><span class="go">${I.chev(22)}</span></a>`),
+      );
+    }
     if (s.mistakesTotal) {
       $app.append(
         h(`<a class="line-link" href="#/bank" style="margin-top:14px">${I.book()}<span>Mistake Bank <span class="s">· ${s.mistakesTotal - s.mistakesMastered} to practise</span></span><span class="go" style="color:var(--muted)">${I.chev()}</span></a>`),
@@ -460,6 +602,7 @@ async function renderTalk(scenarioId) {
       <button class="round-btn" data-exit aria-label="Leave conversation">${I.close()}</button>
       ${avatar()}
       <div class="meta"><div class="title">…</div><div class="role">Base</div></div>
+      <button class="round-btn hf" data-hf aria-pressed="false" aria-label="Hands-free mode" title="Hands-free mode">${I.headset()}</button>
       <button class="pill" data-finish style="display:none">Finish</button>
     </div>`);
   const progress = h(`<div class="segments"></div>`);
@@ -469,7 +612,7 @@ async function renderTalk(scenarioId) {
   const headAvatar = head.querySelector('.avatar');
 
   const dock = h(`<div class="dock"><div class="dock-inner">
-      <div class="hint">Getting ready…</div>
+      <div class="hint" aria-live="polite">Getting ready…</div>
       <div class="dock-row">
         <div class="dock-side" data-left><button class="side-btn" data-type aria-label="Type instead">${I.keyboard()}</button></div>
         <div class="mic-halo"><button class="mic" disabled aria-label="Tap to speak">${MIC_SVG}<span class="ring"></span></button></div>
@@ -507,6 +650,25 @@ async function renderTalk(scenarioId) {
   let retryTarget = null;
   let attempts = 0;
   let fixCard = null;
+  let micRef = null;
+  let handsFree = prefs.get('handsFree', false);
+  const hfBtn = head.querySelector('[data-hf]');
+  const paintHf = () => {
+    hfBtn.classList.toggle('on', handsFree);
+    hfBtn.setAttribute('aria-pressed', String(handsFree));
+  };
+  paintHf();
+  hfBtn.addEventListener('click', () => {
+    handsFree = !handsFree;
+    prefs.set('handsFree', handsFree);
+    paintHf();
+    if (handsFree) track('handsfree_on');
+    toast(handsFree ? 'Hands-free on: I\'ll listen after I speak, and send when you pause.' : 'Hands-free off: tap the mic to talk.');
+    if (handsFree && !micBtn.disabled && mode !== 'done') micRef?.start();
+  });
+  const autoListen = () => {
+    if (handsFree && mode !== 'done' && !micBtn.disabled) micRef?.start();
+  };
 
   let session;
   try {
@@ -552,7 +714,7 @@ async function renderTalk(scenarioId) {
     thread.append(b);
     scrollDown();
     setReady();
-    if (play) speakAs(text);
+    if (play) speakAs(text).then(autoListen);
   }
 
   function setReady() {
@@ -576,6 +738,7 @@ async function renderTalk(scenarioId) {
   }
 
   const mic = micControl(micBtn, {
+    autoStop: () => handsFree,
     onState(st, sec) {
       if (st === 'recording') {
         setHint(mode === 'retry' ? 'Say it… tap stop when done' : 'Listening… pause as much as you need');
@@ -596,6 +759,8 @@ async function renderTalk(scenarioId) {
       else submitTurn(audioForm(out));
     },
   });
+
+  micRef = mic;
 
   function resetSides() {
     right.innerHTML = '';
@@ -628,23 +793,36 @@ async function renderTalk(scenarioId) {
   if (!Recorder.supported()) openTyping();
 
   async function submitTurn(form) {
-    thinking(true);
-    setHint('Thinking…');
+    // Optimistic UI: the learner's bubble appears instantly while we transcribe.
+    const mine = h(`<div class="bubble learner pending" aria-label="Sending your reply"><span class="wave"><i></i><i></i><i></i><i></i><i></i></span></div>`);
+    thread.append(mine);
+    scrollDown();
+    micBtn.disabled = true;
+    setHint('Listening back…');
     let r;
+    const slow = setTimeout(() => {
+      setHint('Thinking…');
+      thinking(true);
+    }, 1200);
     try {
       r = await api(`/sessions/${session.id}/turn`, { method: 'POST', form });
     } catch (e) {
+      clearTimeout(slow);
       thinking(false);
+      mine.remove();
       toast(e.message);
       setReady();
       return;
     }
+    clearTimeout(slow);
     thinking(false);
     turn = r.turn;
     setProgress(turn, r.maxTurns);
     head.querySelector('[data-finish]').style.display = turn >= 2 ? '' : 'none';
 
-    thread.append(h(`<div class="bubble learner">${markMl(r.transcript)}</div>`));
+    mine.classList.remove('pending');
+    mine.removeAttribute('aria-label');
+    mine.innerHTML = markMl(r.transcript);
     for (const w of r.lifeline) {
       thread.append(h(`<div class="word-card"><span class="ttl">NEW WORD</span><span class="from">${esc(w.said)}</span><span style="color:var(--gold-ink)">${I.arrow()}</span><span class="to">${esc(w.english)}</span></div>`));
     }
@@ -689,7 +867,7 @@ async function renderTalk(scenarioId) {
     thread.append(fixCard);
     scrollDown();
     setReady();
-    speakAs(c.sayItLikeThis, { slow: true });
+    speakAs(c.sayItLikeThis, { slow: true }).then(autoListen);
   }
 
   async function submitRetry(form) {
@@ -828,10 +1006,12 @@ function renderSummary(r, scenarioId) {
     $app.append(card);
   }
   const actions = h(`<div class="stack" style="margin-top:20px">
+    ${r.turns ? `<button class="btn block outline" data-share style="min-height:52px;border-radius:16px">${I.share()} Share my progress</button>` : ''}
     <button class="btn block" data-again>Practise again</button>
     <button class="btn block secondary" data-home>Back to home</button>
   </div>`);
   actions.querySelector('[data-again]').addEventListener('click', () => go(`#/talk/${scenarioId}`));
+  actions.querySelector('[data-share]')?.addEventListener('click', () => shareProgress(r, words));
   actions.querySelector('[data-home]').addEventListener('click', () => go('#/'));
   $app.append(actions);
 }
@@ -1083,18 +1263,68 @@ async function renderLogin() {
   const stepProfile = () => {
     box.innerHTML = '';
     const f = profileForm(state.me.user, 'Tell Base about you', 'So every conversation feels like catching up with a coach who knows you. (Optional)', 'Save & continue');
-    f.addEventListener('saved', () => {
-      toast('Saved! Your free sessions are unlocked.');
+    f.addEventListener('saved', stepGoal);
+    const skip = h(`<button type="button" class="btn ghost block">Skip</button>`);
+    skip.addEventListener('click', stepGoal);
+    f.append(skip);
+    box.append(f);
+  };
+
+  const stepGoal = () => {
+    box.innerHTML = '';
+    const f = goalForm(state.me.user, { title: 'Set a small daily goal', cta: 'Start practising' });
+    f.addEventListener('saved', async () => {
+      await api('/settings', { method: 'POST', body: { onboarded: true } }).catch(() => {});
+      toast('All set! Your free sessions are unlocked.');
       after();
     });
-    const skip = h(`<button type="button" class="btn ghost block">Skip</button>`);
-    skip.addEventListener('click', after);
-    f.append(skip);
     box.append(f);
   };
 
   if (!state.me.user.isGuest) stepProfile();
   else stepPhone();
+}
+
+/** Daily goal + WhatsApp reminder opt-in (used in onboarding and settings). */
+function goalForm(u, { title, cta }) {
+  let goal = u.dailyGoalMin || 5;
+  let rem = u.reminders ?? false;
+  const opts = [
+    [5, 'Easy', 'ലളിതം'],
+    [10, 'Steady', 'സ്ഥിരം'],
+    [15, 'Serious', 'ഗൗരവം'],
+  ];
+  const f = h(`<form>
+    ${title ? `<h1>${esc(title)}</h1><p class="lead">Small and daily beats long and rare. You can change this any time.</p>` : ''}
+    <div class="goal-opts" role="radiogroup" aria-label="Daily goal">${opts
+      .map(([m, t, ml]) => `<button type="button" role="radio" class="goal-opt ${m === goal ? 'on' : ''}" data-m="${m}" aria-checked="${m === goal}"><span class="m">${m}<small>min</small></span><span class="t">${t}</span><span class="ml s">${ml}</span></button>`)
+      .join('')}</div>
+    <label class="toggle-row"><span class="ic">${I.bell()}</span><span><b>Friendly reminders on WhatsApp</b><span class="s">A short personal message from Base on days you haven't practised. Never spam.</span></span>
+      <input type="checkbox" class="switch" ${rem ? 'checked' : ''} /></label>
+    <div class="err"></div>
+    <button class="btn block" style="margin-top:12px">${esc(cta)}</button>
+  </form>`);
+  f.querySelectorAll('.goal-opt').forEach((b) =>
+    b.addEventListener('click', () => {
+      goal = Number(b.dataset.m);
+      f.querySelectorAll('.goal-opt').forEach((x) => {
+        x.classList.toggle('on', x === b);
+        x.setAttribute('aria-checked', String(x === b));
+      });
+    }),
+  );
+  f.querySelector('.switch').addEventListener('change', (e) => (rem = e.target.checked));
+  f.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    try {
+      await api('/settings', { method: 'POST', body: { dailyGoalMin: goal, reminders: rem } });
+      await loadMe();
+      f.dispatchEvent(new Event('saved'));
+    } catch (err) {
+      f.querySelector('.err').textContent = err.message;
+    }
+  });
+  return f;
 }
 
 function profileForm(u, title, sub, cta) {
@@ -1131,28 +1361,116 @@ function profileForm(u, title, sub, cta) {
   return f;
 }
 
-// ─── Profile ─────────────────────────────────────────────────
-async function renderProfile() {
+// ─── Settings ────────────────────────────────────────────────
+async function renderSettings() {
   await loadMe();
   if (state.me.user.isGuest) return go('#/login');
   $app.innerHTML = '';
   $app.append(topbar({ back: true }));
-  const f = profileForm(state.me.user, 'Your profile', `Logged in as ${state.me.user.phone}`, 'Save');
-  f.addEventListener('saved', () => toast('Saved'));
-  $app.append(f);
+  const u = state.me.user;
   const a = state.me.allowance;
-  $app.append(
-    h(`<div class="card dark" style="margin-top:22px"><div class="kasavu"></div><div class="display" style="font-weight:700;font-size:18px;margin-top:10px">Your plan</div><p style="margin:4px 0 0;color:#b9c8c3;font-size:14px">${
-      a.plan === 'paid' ? 'Monthly pass — active' : a.canStart ? `Free trial · ${a.remaining} session${a.remaining === 1 ? '' : 's'} left` : 'Free trial finished'
-    }</p></div>`),
-  );
-  const out = h(`<button class="btn ghost block" style="margin-top:16px">Log out</button>`);
+  $app.append(h(`<h1>Settings</h1>`));
+
+  const plan = h(`<div class="card dark"><div class="kasavu"></div><div class="display" style="font-weight:700;font-size:18px;margin-top:10px">Your plan</div><p style="margin:4px 0 12px;color:#b9c8c3;font-size:14px">${
+    a.plan === 'paid' ? 'Monthly pass — active' : a.canStart ? `Free trial · ${a.remaining} session${a.remaining === 1 ? '' : 's'} left` : 'Free trial finished'
+  }</p>${a.plan === 'paid' ? `<a class="btn outline" style="color:var(--cream);border-color:var(--cream)" href="${esc(state.me.upgrade.url || '#')}" target="_blank" rel="noopener">Manage subscription</a>` : `<a class="btn gold" href="#/upgrade">See the monthly pass</a>`}</div>`);
+  $app.append(plan);
+
+  $app.append(h(`<h2>Daily practice</h2>`));
+  const gf = goalForm(u, { cta: 'Save' });
+  gf.addEventListener('saved', () => toast('Saved'));
+  $app.append(gf);
+
+  $app.append(h(`<h2>About you</h2>`));
+  const pf = profileForm(u, '', '', 'Save');
+  pf.querySelector('h1')?.remove();
+  pf.querySelector('.lead')?.remove();
+  pf.addEventListener('saved', () => toast('Saved'));
+  $app.append(pf);
+
+  $app.append(h(`<h2>More</h2>`));
+  const links = h(`<div class="list-card">
+    <a class="list-btn" href="#/invite">${I.gift()}<span class="t">Invite a friend</span><span class="go">${I.chev()}</span></a>
+    <a class="list-btn" href="${esc(state.me.upgrade.url || '#')}" target="_blank" rel="noopener">${I.chat()}<span class="t">Help on WhatsApp</span><span class="go">${I.chev()}</span></a>
+    <a class="list-btn" href="#/privacy">${I.shield()}<span class="t">Privacy policy</span><span class="go">${I.chev()}</span></a>
+    <a class="list-btn" href="#/terms">${I.info()}<span class="t">Terms &amp; refunds</span><span class="go">${I.chev()}</span></a>
+  </div>`);
+  $app.append(links);
+  $app.append(h(`<p class="small center" style="margin-top:14px">Logged in as ${esc(u.phone)}</p>`));
+  const out = h(`<button class="btn secondary block">Log out</button>`);
   out.addEventListener('click', async () => {
     await api('/auth/logout', { method: 'POST' });
     state.me = null;
     go('#/');
   });
-  $app.append(out);
+  const del = h(`<button class="btn ghost block danger">${I.trash(18)} Delete my account &amp; data</button>`);
+  del.addEventListener('click', async () => {
+    if (!confirm('Delete your account, Mistake Bank and history? This cannot be undone.')) return;
+    await api('/me', { method: 'DELETE' });
+    state.me = null;
+    toast('Your data has been deleted.');
+    go('#/');
+  });
+  $app.append(h(`<div class="stack" style="margin-top:8px"></div>`));
+  $app.lastElementChild.append(out, del);
+}
+
+// ─── Invite a friend (referral loop) ─────────────────────────
+async function renderInvite() {
+  await loadMe();
+  if (state.me.user.isGuest) {
+    sessionStorage.setItem('afterLogin', '#/invite');
+    return go('#/login');
+  }
+  const inv = await api('/invite');
+  $app.innerHTML = '';
+  $app.append(topbar({ back: true }));
+  const text = `I'm practising spoken English with Base — a patient partner, and you can use Malayalam words when you get stuck. Try it free: ${inv.url}`;
+  const box = h(`<section>
+    <div class="invite-art">${I.gift(44)}</div>
+    <h1 class="center">Practise together</h1>
+    <p class="lead center">When a friend joins with your link, you <b>both</b> get <b>${inv.bonus} free sessions</b>.</p>
+    <div class="code-box"><span class="small">Your invite link</span><span class="code">${esc(inv.url.replace(/^https?:\/\//, ''))}</span></div>
+    <div class="stack" style="margin-top:14px">
+      <a class="btn block whatsapp-real" href="https://wa.me/?text=${encodeURIComponent(text)}" target="_blank" rel="noopener" data-wa>${I.chat()} Share on WhatsApp</a>
+      <button class="btn block secondary" data-copy>${I.share()} Copy link</button>
+    </div>
+    <p class="foot-note">${inv.joined ? `${inv.joined} friend${inv.joined === 1 ? '' : 's'} joined so far — thank you!` : 'Tip: share in your family or college WhatsApp group.'}</p>
+  </section>`);
+  box.querySelector('[data-wa]').addEventListener('click', () => track('invite_shared', { via: 'whatsapp' }));
+  box.querySelector('[data-copy]').addEventListener('click', async () => {
+    try {
+      await navigator.clipboard.writeText(inv.url);
+      toast('Link copied');
+    } catch {
+      prompt('Copy your link:', inv.url);
+    }
+    track('invite_shared', { via: 'copy' });
+  });
+  $app.append(box);
+}
+
+// ─── Privacy & terms (plain-language; fill the [placeholders] before launch) ──
+function renderLegal(which) {
+  $app.innerHTML = '';
+  $app.append(topbar({ back: true }));
+  const privacy = `<h1>Privacy policy</h1>
+    <p class="lead">Plain language: what we keep, and why.</p>
+    <div class="legal">
+    <h3>What we collect</h3><ul><li>Your phone number, to log you in and (only if you turn it on) send reminders.</li><li>The <b>text</b> of what you say during practice, your corrections and your progress.</li><li>Your name, job and goals, if you share them, so Base can remember you.</li></ul>
+    <h3>What we don't keep</h3><ul><li>Your voice recordings. Audio is turned into text and then discarded.</li></ul>
+    <h3>Who processes it</h3><ul><li>OpenAI processes your audio and text to transcribe, correct and reply. Your data is not used to train their models through our API account.</li><li>Our messaging provider delivers login codes and reminders.</li></ul>
+    <h3>Your control</h3><ul><li>Turn reminders off any time in Settings.</li><li>Delete your account and all data from Settings → Delete my account.</li></ul>
+    <h3>Contact</h3><p>[COMPANY NAME] · [CONTACT EMAIL / WHATSAPP]</p></div>`;
+  const terms = `<h1>Terms &amp; refunds</h1>
+    <p class="lead">The short version.</p>
+    <div class="legal">
+    <h3>The service</h3><p>Base is a practice partner. It can make mistakes; it is not a certified exam or test.</p>
+    <h3>Monthly pass</h3><ul><li>Renews monthly until you cancel. Cancel any time — you keep access until the end of the month.</li><li>Includes a fair daily practice allowance.</li></ul>
+    <h3>10-day refund promise</h3><p>Not happy in the first 10 days after paying? Message us and we'll refund you in full — no questions asked.</p>
+    <h3>Be kind</h3><p>Don't use Base to create harmful content or to abuse the service.</p>
+    <h3>Contact</h3><p>[COMPANY NAME] · [CONTACT EMAIL / WHATSAPP]</p></div>`;
+  $app.append(h(`<section>${which === 'privacy' ? privacy : terms}</section>`));
 }
 
 // ─── Upgrade / limits ────────────────────────────────────────
@@ -1178,10 +1496,89 @@ async function renderUpgrade() {
       <div class="fix-line" style="margin-top:0"><span class="tick" style="background:var(--gold);color:var(--ink)">${I.check()}</span><span>A partner who remembers you</span></div>
       <a class="btn block gold" data-up href="${esc(state.me.upgrade.url || '#/')}" target="_blank" rel="noopener">Get the monthly pass</a>
     </div>
-    <p class="foot-note">Less than a cup of coffee a week</p>
+    <p class="foot-note">Less than a cup of coffee a week · <a href="#/terms">10-day refund promise</a></p>
   </section>`);
   card.querySelector('[data-up]').addEventListener('click', () => track('upgrade_clicked'));
   $app.append(card);
 }
 
-router();
+// ─── Share card (Strava-style progress post for stories / WhatsApp) ──
+async function shareProgress(r, words) {
+  track('share_progress');
+  let url = location.origin + '/';
+  if (!state.me?.user?.isGuest) url = (await api('/invite').catch(() => null))?.url || url;
+  await document.fonts?.ready;
+  const c = document.createElement('canvas');
+  c.width = 1080;
+  c.height = 1350;
+  const x = c.getContext('2d');
+  x.fillStyle = '#0E5A4A';
+  x.fillRect(0, 0, 1080, 1350);
+  x.strokeStyle = '#1A6E5C';
+  x.lineWidth = 80;
+  x.beginPath();
+  x.arc(980, 160, 260, 0, Math.PI * 2);
+  x.stroke();
+  x.fillStyle = '#E2A93B';
+  x.fillRect(90, 150, 140, 8);
+  x.fillRect(90, 168, 140, 4);
+  x.fillStyle = '#FBF6EC';
+  x.font = '800 64px "Bricolage Grotesque", sans-serif';
+  x.fillText('base.', 90, 120);
+  x.font = '800 34px Manrope, sans-serif';
+  x.fillStyle = '#CFE4DC';
+  x.fillText('I SPOKE ENGLISH OUT LOUD FOR', 90, 300);
+  const sec = Math.round(r.secondsSpoken);
+  x.fillStyle = '#FBF6EC';
+  x.font = '800 260px "Bricolage Grotesque", sans-serif';
+  const big = sec >= 60 ? `${Math.floor(sec / 60)}:${String(sec % 60).padStart(2, '0')}` : String(sec);
+  x.fillText(big, 80, 560);
+  const bw = x.measureText(big).width;
+  x.fillStyle = '#E2A93B';
+  x.font = '800 72px "Bricolage Grotesque", sans-serif';
+  x.fillText(sec >= 60 ? 'min' : 'sec', 100 + bw, 560);
+  x.fillStyle = '#FBF6EC';
+  x.font = '700 48px Manrope, sans-serif';
+  x.fillText(`${r.stats.streak}-day streak  ·  ${r.turns} replies  ·  ${r.mistakes.length} fixes`, 90, 690);
+  if (words.length) {
+    x.font = '600 44px "Baloo Chettan 2", sans-serif';
+    x.fillStyle = '#E2A93B';
+    x.fillText(`New word: ${words[0].said} → ${words[0].english}`, 90, 790);
+  }
+  x.fillStyle = '#E2A93B';
+  x.beginPath();
+  x.roundRect(60, 1080, 960, 200, 40);
+  x.fill();
+  x.fillStyle = '#14211E';
+  x.font = '800 54px "Bricolage Grotesque", sans-serif';
+  x.fillText('Practise with me — free', 110, 1170);
+  x.font = '700 38px Manrope, sans-serif';
+  x.fillText(url.replace(/^https?:\/\//, ''), 110, 1235);
+  const blob = await new Promise((res) => c.toBlob(res, 'image/png'));
+  const file = new File([blob], 'my-english-progress.png', { type: 'image/png' });
+  const text = `I spoke English out loud for ${big} ${sec >= 60 ? 'min' : 'sec'} today with Base! Practise with me: ${url}`;
+  try {
+    if (navigator.canShare?.({ files: [file] })) return await navigator.share({ files: [file], text });
+    if (navigator.share) return await navigator.share({ text, url });
+  } catch (e) {
+    if (e.name === 'AbortError') return;
+  }
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = file.name;
+  a.click();
+  toast('Image saved — post it to your WhatsApp status or Instagram story!');
+}
+
+// ─── Boot ────────────────────────────────────────────────────
+(async () => {
+  const params = new URLSearchParams(location.search);
+  const ref = params.get('ref');
+  if (ref) {
+    await api('/referral', { method: 'POST', body: { code: ref } }).catch(() => {});
+    params.delete('ref');
+    history.replaceState(null, '', location.pathname + (params.size ? '?' + params : '') + location.hash);
+  }
+  router();
+  if ('serviceWorker' in navigator && location.protocol === 'https:') navigator.serviceWorker.register('/sw.js').catch(() => {});
+})();

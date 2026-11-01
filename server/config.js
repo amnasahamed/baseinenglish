@@ -18,7 +18,12 @@ export const config = {
   ttsVoice: env.OPENAI_TTS_VOICE || 'coral',
   mockAi: env.MOCK_AI === '1' || (!env.OPENAI_API_KEY && env.NODE_ENV === 'test'),
 
-  otpProvider: env.OTP_PROVIDER || 'console',
+  messageProvider: env.MESSAGE_PROVIDER || env.OTP_PROVIDER || 'console',
+  messageWebhookUrl: env.MESSAGE_WEBHOOK_URL || '',
+  messageWebhookToken: env.MESSAGE_WEBHOOK_TOKEN || '',
+  publicUrl: (env.PUBLIC_URL || '').replace(/\/$/, ''),
+  referralBonusSessions: num(env.REFERRAL_BONUS_SESSIONS, 3),
+  nudgeHour: env.NUDGE_HOUR === undefined || env.NUDGE_HOUR === '' ? null : num(env.NUDGE_HOUR, null),
   twilioSid: env.TWILIO_ACCOUNT_SID || '',
   twilioToken: env.TWILIO_AUTH_TOKEN || '',
   twilioFrom: env.TWILIO_FROM || '',
