@@ -29,6 +29,7 @@ export const categories = [
 export const scenarios = [
   {
     id: 'interview_intro',
+    partnerLabel: 'HR interviewer',
     category: 'interview',
     title: 'Tell me about yourself',
     subtitle: 'Introduce yourself & your past work',
@@ -40,6 +41,7 @@ export const scenarios = [
   },
   {
     id: 'interview_hire',
+    partnerLabel: 'Hiring manager',
     category: 'interview',
     title: 'Why should we hire you?',
     subtitle: 'Strengths, weaknesses, the tough questions',
@@ -51,6 +53,7 @@ export const scenarios = [
   },
   {
     id: 'office_update',
+    partnerLabel: 'Team lead',
     category: 'office',
     title: 'Daily work update',
     subtitle: 'Morning standup with your team lead',
@@ -62,6 +65,7 @@ export const scenarios = [
   },
   {
     id: 'office_leave',
+    partnerLabel: 'Your manager',
     category: 'office',
     title: 'Ask for leave / explain a delay',
     subtitle: 'Talking politely to your manager',
@@ -73,6 +77,7 @@ export const scenarios = [
   },
   {
     id: 'daily_cafe',
+    partnerLabel: 'Café staff',
     category: 'daily',
     title: 'Café & customer support',
     subtitle: 'Ordering food, sorting out a problem',
@@ -84,6 +89,7 @@ export const scenarios = [
   },
   {
     id: 'daily_travel',
+    partnerLabel: 'Clinic receptionist',
     category: 'daily',
     title: "Doctor's clinic & airport",
     subtitle: 'Explaining a problem, asking for help',
@@ -100,6 +106,6 @@ export const scenarioById = Object.fromEntries(scenarios.map((s) => [s.id, s]));
 export function publicScenarios() {
   return {
     categories,
-    scenarios: scenarios.map(({ id, category, title, subtitle }) => ({ id, category, title, subtitle })),
+    scenarios: scenarios.map(({ id, category, title, subtitle, partnerLabel }) => ({ id, category, title, subtitle, partnerLabel })),
   };
 }

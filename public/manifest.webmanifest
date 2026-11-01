@@ -4,7 +4,7 @@
   "description": "Daily English speaking practice for Malayalam speakers",
   "start_url": "/",
   "display": "standalone",
-  "background_color": "#fbf7f0",
-  "theme_color": "#0f5c55",
+  "background_color": "#FBF6EC",
+  "theme_color": "#0E5A4A",
   "icons": [{ "src": "/icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }]
 }

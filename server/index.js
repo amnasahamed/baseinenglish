@@ -156,7 +156,7 @@ api.post(
     }
     store.addMessage(session.id, 'partner', opener);
     logEvent(u.id, 'session_start', { scenario: scenario.id }, session.id);
-    res.json({ session: { id: session.id, scenarioId: scenario.id, title: scenario.title, maxTurns: scenario.maxTurns }, opener });
+    res.json({ session: { id: session.id, scenarioId: scenario.id, title: scenario.title, partnerLabel: scenario.partnerLabel, maxTurns: scenario.maxTurns }, opener });
   }),
 );
 
