@@ -66,6 +66,11 @@ test('settings, insights, referral bonus and nudges', async () => {
   assert.equal(me.data.insights.replies, 1);
   assert.ok(me.data.insights.wordsPerReply > 5);
   const trialBefore = me.data.allowance.remaining;
+  assert.ok(me.data.level.xp >= 10, 'replies earn XP');
+  assert.equal(me.data.quests.quests.length, 3);
+  const badges = await call('/badges');
+  assert.ok(badges.data.badges.find((b) => b.id === 'first_chat').earned);
+  assert.equal((await call('/quests/claim', { method: 'POST' })).data.gained, 0, 'chest stays locked until all quests are done');
 
   const inv = await call('/invite');
   assert.match(inv.data.url, /\?ref=[A-Z0-9]{6}$/);

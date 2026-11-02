@@ -55,6 +55,23 @@ All the teaching logic (persona, the "one fix" rules, the list of common Malayal
 - **Share my progress:** generates a branded 1080×1350 image for WhatsApp status or Instagram stories, with the learner's invite link.
 - **Settings:** daily goal, reminders, profile, plan, help, privacy policy, terms and the 10-day refund promise, log out, and delete account and data. Fill in the `[COMPANY NAME]` / `[CONTACT]` placeholders in `public/app.js` (`renderLegal`) before launch.
 
+## Habit loop (why people come back)
+
+Borrowed from the best habit apps, tuned to be encouraging rather than guilt-driven:
+
+| Mechanic | What the learner sees |
+|---|---|
+| **XP & 10 levels** | +10 per reply, +5 with no fix needed, +10 for saying a fix aloud, +25 for mastering a mistake, +30 for the daily goal, +50 for the quest chest. Levels go from *First Words* to *Natural Speaker* (with Malayalam names). |
+| **Combos** | "3 in a row — on fire!" for consecutive clean replies or first-try fixes. |
+| **Daily quests + chest** | Speak for your goal, say 3 fixes aloud, fix 1 old mistake. Finish all 3 to open a chest worth bonus XP. |
+| **Streaks with freezes** | One freeze is saved automatically and protects a single missed day. Earn another every 7-day milestone (max 2). An evening reminder appears only when a streak is at risk. |
+| **Reward reel** | At the end of a session, XP counts up, the level bar fills, and the goal, milestone and new badges pop in with sound and vibration. |
+| **Tomorrow hook** | Base ends each session with a personal teaser ("Tomorrow: tell me how the client call went") and offers a WhatsApp reminder. The next session opens with that follow-up. |
+| **Badges** | 12 achievements, plus a level ladder showing the road ahead (`#/badges`). |
+| **Sound & haptics** | Small synthesized sounds and vibrations. They can be switched off in Settings. |
+
+Guardrails: no fake urgency or countdowns, no streak shaming, the daily session limit still applies, and the paywall never interrupts a conversation.
+
 ## UX details
 
 - **Try first, sign in later:** no signup wall. The login prompt comes right after the first win.

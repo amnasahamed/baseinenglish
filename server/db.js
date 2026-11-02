@@ -102,6 +102,10 @@ addColumn('users', 'ref_code', 'TEXT');
 addColumn('users', 'referred_by', 'TEXT');
 addColumn('users', 'referral_rewarded', 'INTEGER NOT NULL DEFAULT 0');
 addColumn('users', 'bonus_sessions', 'INTEGER NOT NULL DEFAULT 0');
+addColumn('users', 'xp', 'INTEGER NOT NULL DEFAULT 0');
+addColumn('users', 'freezes', 'INTEGER NOT NULL DEFAULT 1');
+addColumn('users', 'badges_seen', "TEXT NOT NULL DEFAULT '[]'");
+addColumn('users', 'next_hook', 'TEXT');
 db.exec(`
 CREATE UNIQUE INDEX IF NOT EXISTS idx_users_ref ON users(ref_code);
 CREATE TABLE IF NOT EXISTS nudges (
@@ -114,6 +118,20 @@ CREATE TABLE IF NOT EXISTS nudges (
   read_at TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_nudges_user ON nudges(user_id, id);
+CREATE TABLE IF NOT EXISTS frozen_days (
+  user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  day TEXT NOT NULL,
+  PRIMARY KEY (user_id, day)
+);
+CREATE TABLE IF NOT EXISTS xp_log (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  reason TEXT NOT NULL,
+  amount INTEGER NOT NULL,
+  day TEXT NOT NULL,
+  created_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_xp_user_day ON xp_log(user_id, day);
 `);
 
 export const now = () => new Date().toISOString();
@@ -231,6 +249,7 @@ export function mergeUsers(fromId, intoId) {
 // ─── Practice time & streaks ─────────────────────────────────
 export function addPracticeSeconds(userId, seconds) {
   const s = Math.max(0, Math.min(Number(seconds) || 0, 300));
+  applyStreakFreeze(userId);
   db.prepare(
     'INSERT INTO practice_days (user_id, day, seconds) VALUES (?, ?, ?) ON CONFLICT(user_id, day) DO UPDATE SET seconds = seconds + excluded.seconds',
   ).run(userId, dayOf(), s);
@@ -240,6 +259,8 @@ export function addPracticeSeconds(userId, seconds) {
 export function getStats(userId) {
   const days = db.prepare('SELECT day, seconds FROM practice_days WHERE user_id = ? ORDER BY day DESC').all(userId);
   const daySet = new Set(days.map((d) => d.day));
+  const frozen = new Set(db.prepare('SELECT day FROM frozen_days WHERE user_id = ?').all(userId).map((r) => r.day));
+  for (const f of frozen) daySet.add(f);
   const today = dayOf();
   // A streak stays alive if you practised today OR yesterday (so it doesn't look broken first thing in the morning).
   let cursor = daySet.has(today) ? today : prevDay(today);
@@ -263,13 +284,14 @@ export function getStats(userId) {
   return {
     streak,
     practicedToday: daySet.has(today),
-    daysPracticed: days.length,
     minutesSpoken: Math.round((totalSeconds / 60) * 10) / 10,
     mistakesTotal: m.total || 0,
     mistakesMastered: m.mastered || 0,
     sessionsDone,
     week,
     secondsToday: days.find((d) => d.day === today)?.seconds || 0,
+    frozenDays: [...frozen],
+    daysPracticed: days.length,
   };
 }
 
@@ -509,4 +531,163 @@ export function nudgeCandidates() {
          AND EXISTS (SELECT 1 FROM sessions s WHERE s.user_id = u.id AND s.done = 1)`,
     )
     .all(today, today);
+}
+
+// ─── Habit engine: XP, levels, quests, streak freezes, badges ─
+export const LEVELS = [
+  { at: 0, name: 'First Words', ml: 'ആദ്യ വാക്കുകൾ' },
+  { at: 100, name: 'Ice Breaker', ml: 'മടി മാറുന്നു' },
+  { at: 250, name: 'Small Talker', ml: 'ചെറിയ സംസാരം' },
+  { at: 450, name: 'Confident Chatter', ml: 'ധൈര്യം വന്നു' },
+  { at: 700, name: 'Meeting Ready', ml: 'മീറ്റിംഗിന് റെഡി' },
+  { at: 1000, name: 'Interview Ready', ml: 'ഇന്റർവ്യൂവിന് റെഡി' },
+  { at: 1400, name: 'Story Teller', ml: 'കഥ പറയുന്നയാൾ' },
+  { at: 1900, name: 'Presenter', ml: 'അവതാരകൻ' },
+  { at: 2500, name: 'Fluent Friend', ml: 'നന്നായി സംസാരിക്കും' },
+  { at: 3200, name: 'Natural Speaker', ml: 'സ്വാഭാവികമായി' },
+];
+
+export function levelFor(xp) {
+  let i = 0;
+  while (i + 1 < LEVELS.length && xp >= LEVELS[i + 1].at) i++;
+  const cur = LEVELS[i];
+  const next = LEVELS[i + 1];
+  return {
+    level: i + 1,
+    name: cur.name,
+    ml: cur.ml,
+    xp,
+    floor: cur.at,
+    next: next ? next.at : null,
+    progress: next ? (xp - cur.at) / (next.at - cur.at) : 1,
+  };
+}
+
+export const XP = { reply: 10, clean_reply: 5, retry_pass: 10, mastered: 25, bank_pass: 8, warmup_done: 20, goal_met: 30, quests_done: 50, streak_milestone: 40 };
+
+/** Award XP; `once` makes it at most once per day per reason (e.g. daily goal). Returns the amount awarded. */
+export function awardXp(userId, reason, amount = XP[reason] || 0, { once = false } = {}) {
+  if (!amount) return 0;
+  const day = dayOf();
+  if (once && db.prepare('SELECT 1 FROM xp_log WHERE user_id = ? AND reason = ? AND day = ?').get(userId, reason, day)) return 0;
+  db.prepare('INSERT INTO xp_log (user_id, reason, amount, day, created_at) VALUES (?, ?, ?, ?, ?)').run(userId, reason, amount, day, now());
+  db.prepare('UPDATE users SET xp = xp + ? WHERE id = ?').run(amount, userId);
+  return amount;
+}
+
+export function xpToday(userId) {
+  return db.prepare('SELECT COALESCE(SUM(amount), 0) AS n FROM xp_log WHERE user_id = ? AND day = ?').get(userId, dayOf()).n;
+}
+
+/** Missed exactly one day? A saved freeze quietly protects the streak (max 2 stored). */
+function applyStreakFreeze(userId) {
+  const today = dayOf();
+  const y = prevDay(today);
+  const yy = prevDay(y);
+  const has = (d) => db.prepare('SELECT 1 FROM practice_days WHERE user_id = ? AND day = ? UNION SELECT 1 FROM frozen_days WHERE user_id = ? AND day = ?').get(userId, d, userId, d);
+  if (has(today) || has(y) || !has(yy)) return;
+  const u = getUser(userId);
+  if (!u || u.freezes < 1) return;
+  db.prepare('INSERT OR IGNORE INTO frozen_days (user_id, day) VALUES (?, ?)').run(userId, y);
+  db.prepare('UPDATE users SET freezes = freezes - 1 WHERE id = ?').run(userId);
+  logEvent(userId, 'streak_freeze_used', { day: y });
+}
+
+export const STREAK_MILESTONES = [3, 7, 14, 30, 50, 100];
+
+/** Called after practice: daily goal, streak milestones (+1 freeze every 7 days). Returns what happened. */
+export function checkDailyRewards(userId) {
+  const u = getUser(userId);
+  const st = getStats(userId);
+  const out = { goalMet: false, milestone: null, freezeEarned: false, xp: 0 };
+  if (st.secondsToday >= (u.daily_goal_min || 5) * 60) {
+    const got = awardXp(userId, 'goal_met', XP.goal_met, { once: true });
+    if (got) {
+      out.goalMet = true;
+      out.xp += got;
+    }
+  }
+  if (STREAK_MILESTONES.includes(st.streak) && st.practicedToday) {
+    const got = awardXp(userId, 'streak_milestone', XP.streak_milestone, { once: true });
+    if (got) {
+      out.milestone = st.streak;
+      out.xp += got;
+      if (st.streak % 7 === 0 && u.freezes < 2) {
+        db.prepare('UPDATE users SET freezes = freezes + 1 WHERE id = ?').run(userId);
+        out.freezeEarned = true;
+      }
+    }
+  }
+  return out;
+}
+
+/** Three small daily quests — achievable in one 5-minute session. */
+export function dailyQuests(userId) {
+  const u = getUser(userId);
+  const day = dayOf();
+  // events are stored in UTC; filter precisely by India day
+  const todays = (type) =>
+    db
+      .prepare('SELECT data, created_at FROM events WHERE user_id = ? AND type = ? AND created_at >= ?')
+      .all(userId, type, new Date(Date.now() - 2 * 86400000).toISOString())
+      .filter((e) => dayOf(new Date(e.created_at)) === day);
+  const secs = secondsToday(userId);
+  const goal = (u.daily_goal_min || 5) * 60;
+  const retries = todays('retry_pass').length;
+  const old = todays('retry_pass').filter((e) => ['bank', 'warmup'].includes(safeJson(e.data, {}).context)).length;
+  const quests = [
+    { id: 'speak', title: `Speak for ${u.daily_goal_min || 5} minutes`, ml: 'ഉറക്കെ സംസാരിക്കൂ', progress: Math.min(secs, goal), target: goal, unit: 'sec' },
+    { id: 'retry', title: 'Say 3 fixed sentences out loud', ml: 'ശരിയാക്കിയ വാചകം പറയൂ', progress: Math.min(retries, 3), target: 3 },
+    { id: 'old', title: 'Fix 1 old mistake', ml: 'പഴയ ഒരു തെറ്റ് ശരിയാക്കൂ', progress: Math.min(old, 1), target: 1 },
+  ];
+  const allDone = quests.every((q) => q.progress >= q.target);
+  const claimed = !!db.prepare("SELECT 1 FROM xp_log WHERE user_id = ? AND reason = 'quests_done' AND day = ?").get(userId, day);
+  return { quests, allDone, claimed, chestXp: XP.quests_done };
+}
+
+export function claimChest(userId) {
+  const q = dailyQuests(userId);
+  if (!q.allDone || q.claimed) return 0;
+  return awardXp(userId, 'quests_done', XP.quests_done, { once: true });
+}
+
+export const BADGES = [
+  { id: 'first_chat', name: 'First conversation', ml: 'ആദ്യ സംഭാഷണം', test: (s) => s.sessionsDone >= 1 },
+  { id: 'lifeline', name: 'Used the lifeline', ml: 'മലയാളം സഹായം', test: (s, x) => x.lifeline >= 1 },
+  { id: 'said_it', name: 'Said it right', ml: 'ശരിയായി പറഞ്ഞു', test: (s, x) => x.retries >= 1 },
+  { id: 'streak3', name: '3-day streak', ml: '3 ദിവസം', test: (s) => s.streak >= 3 },
+  { id: 'streak7', name: 'One full week', ml: 'ഒരാഴ്ച', test: (s) => s.streak >= 7 },
+  { id: 'streak30', name: '30-day habit', ml: '30 ദിവസം', test: (s) => s.streak >= 30 },
+  { id: 'min10', name: '10 minutes spoken', ml: '10 മിനിറ്റ്', test: (s) => s.minutesSpoken >= 10 },
+  { id: 'min60', name: 'One hour of English', ml: 'ഒരു മണിക്കൂർ', test: (s) => s.minutesSpoken >= 60 },
+  { id: 'master1', name: 'First mistake mastered', ml: 'ആദ്യ വിജയം', test: (s) => s.mistakesMastered >= 1 },
+  { id: 'master10', name: '10 mistakes mastered', ml: '10 തെറ്റുകൾ ജയിച്ചു', test: (s) => s.mistakesMastered >= 10 },
+  { id: 'all3', name: 'Tried every situation', ml: 'എല്ലാം പരീക്ഷിച്ചു', test: (s, x) => x.categories >= 3 },
+  { id: 'friend', name: 'Brought a friend', ml: 'സുഹൃത്തിനെ കൊണ്ടുവന്നു', test: (s, x) => x.referrals >= 1 },
+];
+
+export function badgeStatus(userId) {
+  const s = getStats(userId);
+  const x = {
+    lifeline: db.prepare("SELECT COUNT(*) AS n FROM events WHERE user_id = ? AND type = 'lifeline_used'").get(userId).n,
+    retries: db.prepare("SELECT COUNT(*) AS n FROM events WHERE user_id = ? AND type = 'retry_pass'").get(userId).n,
+    categories: new Set(db.prepare('SELECT scenario_id FROM sessions WHERE user_id = ? AND done = 1').all(userId).map((r) => r.scenario_id.split('_')[0])).size,
+    referrals: referralCount(userId),
+  };
+  const u = getUser(userId);
+  const seen = new Set(safeJson(u.badges_seen, []));
+  const badges = BADGES.map((b) => ({ id: b.id, name: b.name, ml: b.ml, earned: !!b.test(s, x) }));
+  const fresh = badges.filter((b) => b.earned && !seen.has(b.id));
+  return { badges, fresh };
+}
+
+export function markBadgesSeen(userId, ids) {
+  const u = getUser(userId);
+  const seen = new Set(safeJson(u.badges_seen, []));
+  ids.forEach((i) => seen.add(i));
+  db.prepare('UPDATE users SET badges_seen = ? WHERE id = ?').run(JSON.stringify([...seen]), userId);
+}
+
+export function setNextHook(userId, hook) {
+  db.prepare('UPDATE users SET next_hook = ? WHERE id = ?').run(hook ? String(hook).slice(0, 200) : null, userId);
 }

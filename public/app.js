@@ -75,6 +75,10 @@ const I = {
   chat: (s) => svg('<path d="M21 12a8 8 0 0 1-11.8 7L4 20l1.1-4.5A8 8 0 1 1 21 12z"/>', { size: s || 22 }),
   trash: (s) => svg('<path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13"/>', { size: s || 22 }),
   target: (s) => svg('<circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="5"/><circle cx="12" cy="12" r="1"/>', { size: s || 22 }),
+  snow: (s) => svg('<path d="M12 2v20M4.9 6l14.2 12M4.9 18L19.1 6M9 3.5l3 2.5 3-2.5M9 20.5l3-2.5 3 2.5"/>', { size: s || 18 }),
+  chest: (s) => svg('<path d="M3 10a4 4 0 0 1 4-4h10a4 4 0 0 1 4 4v9H3zM3 12h18M10 12v3h4v-3"/>', { size: s || 24 }),
+  star: (s) => `<svg width="${s || 24}" height="${s || 24}" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 2.5l2.9 6.1 6.6.8-4.9 4.6 1.3 6.6L12 17.3l-5.9 3.3 1.3-6.6-4.9-4.6 6.6-.8z"/></svg>`,
+  lock: (s) => svg('<rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/>', { size: s || 20 }),
   trend: (s) => svg('<path d="M3 17l6-6 4 4 8-8M15 7h6v6"/>', { size: s || 20 }),
 };
 const CAT_ICON = { interview: I.briefcase, office: I.building, daily: I.cup };
@@ -379,6 +383,89 @@ async function primeMic() {
   });
 }
 
+// ─── Feel: sound, haptics, floating rewards ──────────────────
+// Short synthesized sounds (no files to download). Respect the in-app sound switch.
+const sfx = (() => {
+  let ctx;
+  const on = () => prefs.get('sound', true);
+  const tone = (freq, t0, dur, { type = 'sine', vol = 0.12 } = {}) => {
+    const o = ctx.createOscillator();
+    const g = ctx.createGain();
+    o.type = type;
+    o.frequency.setValueAtTime(freq, ctx.currentTime + t0);
+    g.gain.setValueAtTime(0.0001, ctx.currentTime + t0);
+    g.gain.exponentialRampToValueAtTime(vol, ctx.currentTime + t0 + 0.015);
+    g.gain.exponentialRampToValueAtTime(0.0001, ctx.currentTime + t0 + dur);
+    o.connect(g).connect(ctx.destination);
+    o.start(ctx.currentTime + t0);
+    o.stop(ctx.currentTime + t0 + dur + 0.05);
+  };
+  const play = (notes) => {
+    if (!on()) return;
+    try {
+      ctx = ctx || new (window.AudioContext || window.webkitAudioContext)();
+      if (ctx.state === 'suspended') ctx.resume();
+      notes.forEach((n) => tone(...n));
+    } catch {}
+  };
+  return {
+    tap: () => play([[660, 0, 0.06, { type: 'triangle', vol: 0.05 }]]),
+    send: () => play([[520, 0, 0.08, { type: 'triangle', vol: 0.07 }], [780, 0.06, 0.1, { type: 'triangle', vol: 0.06 }]]),
+    success: () => play([[659, 0, 0.12], [880, 0.1, 0.12], [1175, 0.2, 0.22]]),
+    xp: () => play([[1046, 0, 0.07, { type: 'triangle', vol: 0.05 }], [1318, 0.05, 0.1, { type: 'triangle', vol: 0.05 }]]),
+    level: () => play([[523, 0, 0.14], [659, 0.12, 0.14], [784, 0.24, 0.14], [1046, 0.36, 0.4, { vol: 0.14 }]]),
+    soft: () => play([[392, 0, 0.12, { type: 'triangle', vol: 0.05 }]]),
+  };
+})();
+const buzz = (p) => {
+  try {
+    navigator.vibrate?.(p);
+  } catch {}
+};
+
+/** "+10 XP" that floats up from an element. */
+function floatXp(amount, from) {
+  if (!amount) return;
+  const r = (from || document.querySelector('.mic') || document.body).getBoundingClientRect();
+  const el = h(`<div class="xp-float">+${amount} XP</div>`);
+  el.style.left = `${r.left + r.width / 2}px`;
+  el.style.top = `${r.top + Math.min(r.height, 40) / 2}px`;
+  document.body.append(el);
+  sfx.xp();
+  setTimeout(() => el.remove(), 1300);
+}
+
+/** Apply a rewards payload from the server: XP float, level-up, goal reached. */
+function handleRewards(rw, from) {
+  if (!rw) return;
+  const before = state.me?.level?.level;
+  if (rw.xp) floatXp(rw.xp, from);
+  if (state.me && rw.level) state.me.level = rw.level;
+  if (before && rw.level && rw.level.level > before) {
+    setTimeout(() => {
+      sfx.level();
+      buzz([30, 40, 60]);
+      celebrate(`Level ${rw.level.level}!`, rw.level.ml);
+    }, 700);
+  } else if (rw.goalMet) {
+    setTimeout(() => {
+      sfx.level();
+      celebrate("Today's goal done!", 'ഇന്നത്തെ ലക്ഷ്യം പൂർത്തിയായി');
+    }, 700);
+  }
+}
+
+/** Count up a number inside an element. */
+function countUp(el, to, ms = 900) {
+  const start = performance.now();
+  const step = (t) => {
+    const k = Math.min(1, (t - start) / ms);
+    el.textContent = Math.round(to * (1 - Math.pow(1 - k, 3)));
+    if (k < 1) requestAnimationFrame(step);
+  };
+  requestAnimationFrame(step);
+}
+
 // ─── App state & routing ─────────────────────────────────────
 const state = { me: null, scenarios: null, cleanup: null };
 
@@ -396,6 +483,7 @@ const routes = [
   [/^#\/profile$/, renderSettings],
   [/^#\/settings$/, renderSettings],
   [/^#\/invite$/, renderInvite],
+  [/^#\/badges$/, renderBadges],
   [/^#\/privacy$/, () => renderLegal('privacy')],
   [/^#\/terms$/, () => renderLegal('terms')],
   [/^#\/upgrade$/, renderUpgrade],
@@ -438,6 +526,7 @@ function topbar({ back } = {}) {
   const el = h(`<header class="topbar">
     ${back ? `<button class="round-btn" data-back aria-label="Back">${I.back()}</button>` : `<a class="brand" href="#/">${LOGO}<span class="wordmark">base<i>.</i></span></a>`}
     <span class="spacer"></span>
+    ${me?.level?.xp ? `<a class="pill xp-pill" href="#/badges" title="Level ${me.level.level} · ${me.level.xp} XP"><span class="lv">${me.level.level}</span>${me.level.xp}<small>XP</small></a>` : ''}
     ${streak ? `<span class="pill" title="Days in a row" style="color:var(--gold-ink)">${I.flame()}<span style="color:var(--ink)">${streak}</span></span>` : ''}
     ${me?.user?.isGuest ? `<a class="pill outline" href="#/login">Log in</a>` : `<a class="initial" href="#/settings" aria-label="Settings">${esc(initial || '•')}</a>`}
   </header>`);
@@ -466,6 +555,69 @@ function trendLine(now, prev, unit, betterWhenLower = false) {
   if (!diff) return `<span class="trend flat">same as last week</span>`;
   const good = betterWhenLower ? diff < 0 : diff > 0;
   return `<span class="trend ${good ? 'up' : 'flat'}">${diff > 0 ? '+' : ''}${diff}${unit} vs last week</span>`;
+}
+
+function questCard(q) {
+  const el = h(`<div class="quests">
+    <div class="q-head"><b>Daily quests</b><span class="small">${q.quests.filter((x) => x.progress >= x.target).length}/3</span></div>
+    ${q.quests
+      .map((x) => {
+        const pct = Math.round((x.progress / x.target) * 100);
+        const done = x.progress >= x.target;
+        const label = x.unit === 'sec' ? `${Math.floor(x.progress / 60)}/${Math.round(x.target / 60)} min` : `${x.progress}/${x.target}`;
+        return `<div class="q ${done ? 'done' : ''}"><span class="q-ic">${done ? I.check(14) : ''}</span><span class="q-t">${esc(x.title)}<span class="q-bar"><i style="width:${pct}%"></i></span></span><span class="q-n">${label}</span></div>`;
+      })
+      .join('')}
+    <button class="chest ${q.allDone && !q.claimed ? 'ready' : ''} ${q.claimed ? 'claimed' : ''}" ${q.allDone && !q.claimed ? '' : 'disabled'} aria-label="${q.claimed ? 'Chest opened' : q.allDone ? 'Open your reward chest' : 'Finish all quests to open the chest'}">
+      ${I.chest(26)}<span>${q.claimed ? 'Opened · see you tomorrow' : q.allDone ? `Open chest · +${q.chestXp} XP` : `Finish all 3 · +${q.chestXp} XP`}</span>
+    </button>
+  </div>`);
+  const btn = el.querySelector('.chest');
+  btn.addEventListener('click', async () => {
+    btn.disabled = true;
+    const r = await api('/quests/claim', { method: 'POST' }).catch(() => null);
+    if (r?.gained) {
+      sfx.level();
+      buzz([30, 50, 80]);
+      celebrate(`+${r.gained} XP`, 'ഇന്നത്തെ സമ്മാനം!');
+      if (state.me) state.me.level = r.level;
+      btn.classList.remove('ready');
+      btn.classList.add('claimed');
+      btn.querySelector('span').textContent = 'Opened · see you tomorrow';
+    }
+  });
+  return el;
+}
+
+// ─── Badges & levels ─────────────────────────────────────────
+async function renderBadges() {
+  if (!state.me) await loadMe();
+  const r = await api('/badges');
+  $app.innerHTML = '';
+  $app.append(topbar({ back: true }));
+  const L = r.level;
+  $app.append(
+    h(`<section class="lvl-hero">
+      <div class="lv-badge big">${L.level}</div>
+      <h1 class="center" style="margin-top:12px">${esc(L.name)}</h1>
+      <p class="center ml" style="margin:0;color:var(--ink-2)">${esc(L.ml)}</p>
+      <div class="lv-bar wide"><i style="width:${Math.round(L.progress * 100)}%"></i></div>
+      <p class="small center">${L.xp} XP${L.next ? ` · ${L.next - L.xp} to level ${L.level + 1}` : ''}</p>
+    </section>`),
+  );
+  $app.append(h(`<h2>Badges</h2>`));
+  $app.append(
+    h(`<div class="badges">${r.badges
+      .map((b) => `<div class="badge-tile ${b.earned ? 'on' : ''} ${r.fresh.some((f) => f.id === b.id) ? 'fresh' : ''}"><span class="bt-ic">${b.earned ? I.star(26) : I.lock(20)}</span><b>${esc(b.name)}</b><span class="ml">${esc(b.ml)}</span></div>`)
+      .join('')}</div>`),
+  );
+  $app.append(h(`<h2>The road ahead</h2>`));
+  $app.append(
+    h(`<div class="ladder">${r.levels
+      .map((lv, i) => `<div class="rung ${i + 1 < L.level ? 'past' : i + 1 === L.level ? 'now' : ''}"><span class="n">${i + 1}</span><span><b>${esc(lv.name)}</b><span class="ml">${esc(lv.ml)}</span></span><span class="xp">${lv.at} XP</span></div>`)
+      .join('')}</div>`),
+  );
+  $app.append(h(`<p class="foot-note">How to earn XP: reply (+10), reply with no fix (+5), say a fix out loud (+10), master a mistake (+25), hit your daily goal (+30), open the quest chest (+50).</p>`));
 }
 
 function skeletonHome() {
@@ -522,9 +674,23 @@ async function renderHome() {
             <span class="side">${goalRing(s.secondsToday, me.user.dailyGoalMin || 5)}<span class="goal-l">today's goal</span></span>
           </div>
           <div class="week">${week}</div>
+          ${me.level ? `<a class="lvl-row" href="#/badges"><span class="lv-badge">${me.level.level}</span><span class="lv-txt"><b>${esc(me.level.name)}</b><span class="lv-bar"><i style="width:${Math.round(me.level.progress * 100)}%"></i></span><span class="lv-sub">${me.level.next ? `${me.level.next - me.level.xp} XP to level ${me.level.level + 1}` : 'Top level!'}</span></span>${me.freezes ? `<span class="freeze" title="Streak freeze: protects your streak if you miss a day">${I.snow(16)} ${me.freezes}</span>` : ''}</a>` : ''}
         </div>
       </section>`),
     );
+    // Streak at risk (evening, not practised yet): a gentle, honest nudge — not a guilt trip.
+    const hourNow = Number(new Intl.DateTimeFormat('en-GB', { hour: 'numeric', hour12: false, timeZone: 'Asia/Kolkata' }).format(new Date()));
+    if (s.streak >= 2 && !s.practicedToday && hourNow >= 17) {
+      $app.append(h(`<div class="risk">${I.flame(20)}<span>Keep your <b>${s.streak}-day streak</b> alive — 2 minutes is enough tonight.${me.freezes ? ` (You also have ${me.freezes} freeze${me.freezes > 1 ? 's' : ''} saved.)` : ''}</span></div>`));
+    }
+    const resume = me.lastScenario || sc.categories[0].defaultScenario;
+    $app.append(
+      h(`<button class="cta-big" data-scenario="${resume}">
+        <span class="cta-mic">${I.mic(30)}</span>
+        <span class="cta-txt"><b>${s.practicedToday ? 'Keep talking' : "Start today's practice"}</b><span>${me.nextHook ? esc(me.nextHook) : 'A quick 5-minute chat with Base'}</span></span>
+      </button>`),
+    );
+    if (me.quests) $app.append(questCard(me.quests));
     if (me.nudge) {
       const n = h(`<div class="nudge" role="status">${avatar()}<div class="b"><div class="who">Base</div>${esc(me.nudge.text)}</div><button class="x" aria-label="Dismiss">${I.close(14)}</button></div>`);
       n.querySelector('.x').addEventListener('click', () => {
@@ -651,6 +817,19 @@ async function renderTalk(scenarioId) {
   let attempts = 0;
   let fixCard = null;
   let micRef = null;
+  let combo = 0;
+  const comboChip = h(`<div class="combo" aria-live="polite" hidden></div>`);
+  progress.after(comboChip);
+  const bumpCombo = (win) => {
+    combo = win ? combo + 1 : 0;
+    if (combo >= 2) {
+      comboChip.hidden = false;
+      comboChip.innerHTML = `${I.flame(16)} <b>${combo}</b> in a row${combo >= 5 ? ' — unstoppable!' : combo >= 3 ? ' — on fire!' : ''}`;
+      comboChip.classList.remove('pop');
+      void comboChip.offsetWidth;
+      comboChip.classList.add('pop');
+    } else comboChip.hidden = true;
+  };
   let handsFree = prefs.get('handsFree', false);
   const hfBtn = head.querySelector('[data-hf]');
   const paintHf = () => {
@@ -755,6 +934,8 @@ async function renderTalk(scenarioId) {
       } else resetSides();
     },
     onAudio(out) {
+      sfx.send();
+      buzz(15);
       if (mode === 'retry') submitRetry(audioForm(out, { target: retryTarget, mistakeId: pending?.correction?.mistakeId, context: 'session', sessionId: session.id, attempt: attempts + 1 }));
       else submitTurn(audioForm(out));
     },
@@ -823,6 +1004,14 @@ async function renderTalk(scenarioId) {
     mine.classList.remove('pending');
     mine.removeAttribute('aria-label');
     mine.innerHTML = markMl(r.transcript);
+    if (!r.correction) bumpCombo(true);
+    handleRewards(r.rewards, mine);
+    if (r.turn === 1 && !state.me?.stats?.sessionsDone) {
+      setTimeout(() => {
+        sfx.level();
+        celebrate('Your first English reply!', 'തുടക്കം ഗംഭീരം!');
+      }, 400);
+    }
     for (const w of r.lifeline) {
       thread.append(h(`<div class="word-card"><span class="ttl">NEW WORD</span><span class="from">${esc(w.said)}</span><span style="color:var(--gold-ink)">${I.arrow()}</span><span class="to">${esc(w.english)}</span></div>`));
     }
@@ -884,6 +1073,10 @@ async function renderTalk(scenarioId) {
     }
     attempts++;
     if (r.pass) {
+      sfx.success();
+      buzz([20, 30, 40]);
+      bumpCombo(attempts === 1);
+      handleRewards(r.rewards, result);
       fixCard.classList.add('passed');
       result.innerHTML = `<div class="retry-result ok">${I.check(18)} You said it! <span class="heard">“${esc(r.transcript)}”</span></div>`;
       celebrate(r.mastery?.justMastered ? 'Mistake mastered!' : 'Perfect!');
@@ -894,8 +1087,10 @@ async function renderTalk(scenarioId) {
       pending = null;
       await continueAfter(p);
     } else {
+      sfx.soft();
+      bumpCombo(false);
       const missing = r.missing?.length ? ` Listen for: <span class="missing">${r.missing.map(esc).join(', ')}</span>` : '';
-      result.innerHTML = `<div class="retry-result no">Almost! Try once more.${missing}<span class="heard">We heard: “${esc(r.transcript)}”</span></div>`;
+      result.innerHTML = `<div class="retry-result no shake">Almost! Try once more.${missing}<span class="heard">We heard: “${esc(r.transcript)}”</span></div>`;
       if (attempts >= 2 && !fixCard.querySelector('[data-skip]')) {
         const skip = h(`<button class="linkish" data-skip>Move on for now — it's saved in your Mistake Bank</button>`);
         skip.addEventListener('click', async () => {
@@ -967,6 +1162,53 @@ function renderSummary(r, scenarioId) {
       <div class="nums"><span><b>${r.turns}</b> replies</span><span><b>${r.mistakes.length}</b> fix${r.mistakes.length === 1 ? '' : 'es'}</span><span><b>${words.length}</b> new word${words.length === 1 ? '' : 's'}</span></div>
     </section>`);
   $app.append(hero);
+
+  // ── Reward reel: XP counts up, level bar fills, then goal / milestone / badges pop in ──
+  if (r.xp || r.level) {
+    const lb = r.levelBefore || r.level;
+    const up = r.level && lb && r.level.level > lb.level;
+    const reel = h(`<div class="reel">
+      <div class="xp-total"><span class="plus">+</span><span data-xp>0</span><small>XP</small></div>
+      <div class="lvl-line"><span class="lv-badge" data-lv>${lb.level}</span><span class="lv-txt"><b data-lvname>${esc(lb.name)}</b><span class="lv-bar"><i data-bar style="width:${Math.round(lb.progress * 100)}%"></i></span></span></div>
+      <div class="chips" data-chips></div>
+    </div>`);
+    $app.append(reel);
+    const chips = reel.querySelector('[data-chips]');
+    const addChip = (html, delay, cls = '') =>
+      setTimeout(() => {
+        chips.append(h(`<span class="rw-chip ${cls}">${html}</span>`));
+        sfx.xp();
+        buzz(12);
+      }, delay);
+    setTimeout(() => {
+      countUp(reel.querySelector('[data-xp]'), r.xp || 0);
+      sfx.success();
+    }, 350);
+    setTimeout(() => {
+      const bar = reel.querySelector('[data-bar]');
+      if (up) {
+        bar.style.width = '100%';
+        setTimeout(() => {
+          reel.querySelector('[data-lv]').textContent = r.level.level;
+          reel.querySelector('[data-lvname]').textContent = r.level.name;
+          reel.querySelector('[data-lv]').classList.add('bump');
+          bar.style.transition = 'none';
+          bar.style.width = '0%';
+          void bar.offsetWidth;
+          bar.style.transition = '';
+          bar.style.width = `${Math.round(r.level.progress * 100)}%`;
+          sfx.level();
+          buzz([30, 40, 60]);
+          celebrate(`Level ${r.level.level}!`, r.level.ml);
+        }, 750);
+      } else bar.style.width = `${Math.round(r.level.progress * 100)}%`;
+    }, 1200);
+    let d = 1900 + (up ? 1200 : 0);
+    if (r.goalMet) addChip(`${I.target(16)} Daily goal done`, (d += 350), 'gold');
+    if (r.milestone) addChip(`${I.flame(16)} ${r.milestone}-day streak!`, (d += 350), 'gold');
+    for (const b of r.newBadges || []) addChip(`${I.star(16)} ${esc(b.name)}`, (d += 350), 'star');
+  }
+
   if (r.coachNote) $app.append(h(`<p class="coach-note">${esc(r.coachNote)}</p>`));
 
   if (r.mistakes.length || words.length) {
@@ -1005,6 +1247,20 @@ function renderSummary(r, scenarioId) {
     });
     $app.append(card);
   }
+  // Tomorrow hook + commitment ("remind me") — the open loop that brings people back.
+  if (r.nextHook && !r.needLogin) {
+    const remindOn = state.me?.user?.reminders;
+    const hook = h(`<div class="hook">${avatar()}<div><div class="hook-k">TOMORROW</div><div class="hook-t">${esc(r.nextHook)}</div>
+      ${remindOn ? `<div class="small" style="margin-top:6px">${I.bell(14)} I'll message you if you forget.</div>` : `<button class="btn outline" data-remind style="margin-top:10px">${I.bell(16)} Remind me on WhatsApp</button>`}</div></div>`);
+    hook.querySelector('[data-remind]')?.addEventListener('click', async (e) => {
+      await api('/settings', { method: 'POST', body: { reminders: true } }).catch(() => {});
+      e.target.closest('button').outerHTML = `<div class="small" style="margin-top:6px">${I.check(14)} Done — I'll message you if you forget.</div>`;
+      sfx.tap();
+    });
+    $app.append(hook);
+  }
+  if (r.quests && !r.needLogin) $app.append(questCard(r.quests));
+
   const actions = h(`<div class="stack" style="margin-top:20px">
     ${r.turns ? `<button class="btn block outline" data-share style="min-height:52px;border-radius:16px">${I.share()} Share my progress</button>` : ''}
     <button class="btn block" data-again>Practise again</button>
@@ -1085,6 +1341,8 @@ function bankCard(m) {
             card.querySelector('[data-bars]').innerHTML = bars(m);
           }
           res.innerHTML = `<div class="retry-result ok">${I.check(18)} ${r.mastery?.justMastered ? 'Mastered!' : 'Perfect!'}</div>`;
+          sfx.success();
+          handleRewards(r.rewards, res);
           celebrate(r.mastery?.justMastered ? 'Mistake mastered!' : 'Perfect!');
         } else {
           res.innerHTML = `<div class="retry-result no">Almost! Try again.<span class="heard">We heard: “${esc(r.transcript)}”</span></div>`;
@@ -1156,6 +1414,8 @@ async function renderWarmup() {
             passed++;
             answer.style.display = '';
             res.innerHTML = `<div class="retry-result ok">${I.check(18)} Perfect!</div>`;
+            sfx.success();
+            handleRewards(r.rewards, res);
             celebrate(r.mastery?.justMastered ? 'Mistake mastered!' : 'Perfect!');
             await sleep(1300);
             i++;
@@ -1174,7 +1434,10 @@ async function renderWarmup() {
 
   const finishWarmup = async () => {
     const r = await api('/warmup/done', { method: 'POST', body: { passed, total: items.length } }).catch(() => null);
-    if (r) state.me.stats = r.stats;
+    if (r) {
+      state.me.stats = r.stats;
+      handleRewards(r.rewards);
+    }
     box.innerHTML = '';
     box.append(
       emptyState(I.bolt(36), 'Warm-up done!', `You said ${passed} of ${items.length} sentences the right way.`, `<div class="stack"><a class="btn block" href="#/">Now have a conversation</a><a class="btn block secondary" href="#/bank">Open Mistake Bank</a></div>`),
@@ -1381,6 +1644,14 @@ async function renderSettings() {
   gf.addEventListener('saved', () => toast('Saved'));
   $app.append(gf);
 
+  const snd = h(`<label class="toggle-row"><span class="ic">${I.speaker(20)}</span><span><b>Sounds &amp; vibration</b><span class="s">Little sounds when you get it right.</span></span><input type="checkbox" class="switch" ${prefs.get('sound', true) ? 'checked' : ''} /></label>`);
+  snd.querySelector('input').addEventListener('change', (e) => {
+    prefs.set('sound', e.target.checked);
+    if (e.target.checked) sfx.success();
+    else track('sound_off');
+  });
+  $app.append(snd);
+
   $app.append(h(`<h2>About you</h2>`));
   const pf = profileForm(u, '', '', 'Save');
   pf.querySelector('h1')?.remove();
@@ -1390,6 +1661,7 @@ async function renderSettings() {
 
   $app.append(h(`<h2>More</h2>`));
   const links = h(`<div class="list-card">
+    <a class="list-btn" href="#/badges">${I.star(22)}<span class="t">Level &amp; badges</span><span class="go">${I.chev()}</span></a>
     <a class="list-btn" href="#/invite">${I.gift()}<span class="t">Invite a friend</span><span class="go">${I.chev()}</span></a>
     <a class="list-btn" href="${esc(state.me.upgrade.url || '#')}" target="_blank" rel="noopener">${I.chat()}<span class="t">Help on WhatsApp</span><span class="go">${I.chev()}</span></a>
     <a class="list-btn" href="#/privacy">${I.shield()}<span class="t">Privacy policy</span><span class="go">${I.chev()}</span></a>

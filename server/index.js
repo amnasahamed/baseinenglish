@@ -85,6 +85,13 @@ function publicMistake(m) {
   };
 }
 
+/** XP + level snapshot after an action, with any daily rewards that just unlocked. */
+function rewards(userId, gained, extra = {}) {
+  const daily = store.checkDailyRewards(userId);
+  const u = store.getUser(userId);
+  return { xp: gained + daily.xp, level: store.levelFor(u.xp), goalMet: daily.goalMet, milestone: daily.milestone, freezeEarned: daily.freezeEarned, ...extra };
+}
+
 const api = express.Router();
 api.use(identify);
 
@@ -98,6 +105,12 @@ api.get('/me', (req, res) => {
     upgrade: { url: config.upgradeUrl, price: config.upgradePriceText },
     insights: u.phone || store.getStats(u.id).sessionsDone ? store.weeklyInsights(u.id) : null,
     nudge: store.latestNudge(u.id),
+    level: store.levelFor(u.xp),
+    xpToday: store.xpToday(u.id),
+    freezes: u.freezes,
+    quests: store.dailyQuests(u.id),
+    nextHook: u.next_hook,
+    lastScenario: db.prepare('SELECT scenario_id FROM sessions WHERE user_id = ? AND done = 1 ORDER BY started_at DESC LIMIT 1').get(u.id)?.scenario_id || null,
     mock: config.mockAi,
   });
 });
@@ -107,6 +120,18 @@ api.post('/settings', (req, res) => {
   const u = store.updateSettings(req.user.id, { dailyGoalMin, reminders, onboarded });
   if (reminders !== undefined) logEvent(u.id, reminders ? 'reminders_on' : 'reminders_off');
   res.json({ user: publicUser(u) });
+});
+
+api.post('/quests/claim', (req, res) => {
+  const gained = store.claimChest(req.user.id);
+  if (gained) logEvent(req.user.id, 'chest_claimed');
+  res.json({ gained, level: store.levelFor(store.getUser(req.user.id).xp), quests: store.dailyQuests(req.user.id) });
+});
+
+api.get('/badges', (req, res) => {
+  const { badges, fresh } = store.badgeStatus(req.user.id);
+  store.markBadgesSeen(req.user.id, fresh.map((b) => b.id));
+  res.json({ badges, fresh, level: store.levelFor(store.getUser(req.user.id).xp), levels: store.LEVELS });
 });
 
 api.post('/nudges/:id/read', (req, res) => {
@@ -268,6 +293,7 @@ api.post(
     const counted = store.addPracticeSeconds(u.id, seconds);
     db.prepare('UPDATE sessions SET user_turns = ?, seconds_spoken = seconds_spoken + ? WHERE id = ?').run(turnNumber, counted, session.id);
     logEvent(u.id, 'turn', { n: turnNumber, corrected: !!correction, sec: counted }, session.id);
+    const gained = store.awardXp(u.id, 'reply') + (correction ? 0 : store.awardXp(u.id, 'clean_reply'));
 
     res.json({
       transcript,
@@ -279,6 +305,7 @@ api.post(
       done,
       turn: turnNumber,
       maxTurns: scenario.maxTurns,
+      rewards: rewards(u.id, gained, { clean: !correction }),
     });
   }),
 );
@@ -299,12 +326,15 @@ api.post(
     const words = learnerMsgs.flatMap((m) => m.meta.lifeline || []);
 
     let coachNote = null;
+    let nextHook = null;
     if (learnerMsgs.length && !session.ended_at) {
       try {
         const s = await summarizeSession({ scenario, user: u, history, mistakes });
         store.updateProfile(u.id, { name: s.name, job_role: s.job_role, goals: s.goals, facts: s.facts });
         db.prepare('UPDATE sessions SET summary = ? WHERE id = ?').run(`${scenario.title}: ${s.summary}`, session.id);
         coachNote = s.coach_note_ml;
+        nextHook = s.next_hook || null;
+        store.setNextHook(u.id, nextHook);
       } catch (e) {
         console.error('[summary]', e.message);
       }
@@ -316,8 +346,22 @@ api.post(
       session.id,
     );
     const fresh = store.getUser(u.id);
+    const daily = store.checkDailyRewards(u.id);
+    const sessionXp = db.prepare('SELECT COALESCE(SUM(amount), 0) AS n FROM xp_log WHERE user_id = ? AND created_at >= ?').get(u.id, session.started_at).n;
+    const lvlAfter = store.levelFor(store.getUser(u.id).xp);
+    const lvlBefore = store.levelFor(Math.max(0, store.getUser(u.id).xp - sessionXp));
+    const { fresh: newBadges } = store.badgeStatus(u.id);
+    if (fresh.phone) store.markBadgesSeen(u.id, newBadges.map((b) => b.id));
     res.json({
       coachNote,
+      nextHook,
+      xp: sessionXp,
+      levelBefore: lvlBefore,
+      level: lvlAfter,
+      goalMet: daily.goalMet || store.getStats(u.id).secondsToday >= (fresh.daily_goal_min || 5) * 60,
+      milestone: daily.milestone,
+      newBadges,
+      quests: store.dailyQuests(u.id),
       secondsSpoken: store.getSession(session.id).seconds_spoken,
       turns: learnerMsgs.length,
       mistakes: mistakes.map(publicMistake),
@@ -352,7 +396,12 @@ api.post(
     }
     store.addPracticeSeconds(req.user.id, Number(req.body?.durationSec) || 0);
     logEvent(req.user.id, r.pass ? 'retry_pass' : 'retry_fail', { context, score: r.score, attempt: Number(req.body?.attempt) || 1 }, req.body?.sessionId || null);
-    res.json({ transcript, ...r, mastery });
+    let gained = 0;
+    if (r.pass) {
+      gained += store.awardXp(req.user.id, context === 'session' ? 'retry_pass' : 'bank_pass');
+      if (mastery?.justMastered) gained += store.awardXp(req.user.id, 'mastered');
+    }
+    res.json({ transcript, ...r, mastery, rewards: rewards(req.user.id, gained) });
   }),
 );
 
@@ -367,7 +416,8 @@ api.get('/warmup', (req, res) => {
 
 api.post('/warmup/done', (req, res) => {
   logEvent(req.user.id, 'warmup_done', { passed: Number(req.body?.passed) || 0, total: Number(req.body?.total) || 0 });
-  res.json({ ok: true, stats: store.getStats(req.user.id) });
+  const gained = Number(req.body?.passed) ? store.awardXp(req.user.id, 'warmup_done', store.XP.warmup_done, { once: true }) : 0;
+  res.json({ ok: true, stats: store.getStats(req.user.id), rewards: rewards(req.user.id, gained) });
 });
 
 // ─── Voice ───────────────────────────────────────────────────
@@ -384,7 +434,7 @@ api.post(
 );
 
 // ─── Pilot feedback & light analytics ────────────────────────
-const CLIENT_EVENTS = new Set(['correction_feedback', 'retry_skipped', 'replay_partner', 'replay_correction', 'login_prompt_shown', 'login_skipped', 'paywall_shown', 'upgrade_clicked', 'share_progress', 'invite_shared', 'handsfree_on', 'mic_primed']);
+const CLIENT_EVENTS = new Set(['correction_feedback', 'retry_skipped', 'replay_partner', 'replay_correction', 'login_prompt_shown', 'login_skipped', 'paywall_shown', 'upgrade_clicked', 'share_progress', 'invite_shared', 'handsfree_on', 'mic_primed', 'sound_off']);
 api.post('/events', (req, res) => {
   const type = String(req.body?.type || '');
   if (!CLIENT_EVENTS.has(type)) return res.status(400).json({ error: 'unknown event' });

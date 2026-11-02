@@ -26,6 +26,7 @@ function memoryBlock(user, summaries, topMistakes) {
     lines.push('Recent sessions (newest first):');
     for (const s of summaries) lines.push(`- ${s.summary}`);
   }
+  if (user?.next_hook) lines.push(`Last time you promised to follow up on: ${user.next_hook}`);
   if (topMistakes?.length) {
     lines.push(`Habits they are working on: ${topMistakes.map((m) => m.label).join('; ')}`);
   }
@@ -169,13 +170,17 @@ Write your FIRST line to start this practice. Greet them by name if you know it,
 const SUMMARY_SCHEMA = {
   type: 'object',
   additionalProperties: false,
-  required: ['summary', 'name', 'job_role', 'goals', 'facts', 'coach_note_ml'],
+  required: ['summary', 'name', 'job_role', 'goals', 'facts', 'coach_note_ml', 'next_hook'],
   properties: {
     summary: { type: 'string', description: 'One or two sentences for YOUR memory: what you talked about, any upcoming event (interview date, trip), how they did.' },
     name: { type: ['string', 'null'], description: 'Learner first name if they said it, else null.' },
     job_role: { type: ['string', 'null'], description: 'Their job / field / study if mentioned, else null.' },
     goals: { type: ['string', 'null'], description: 'Why they are practising (e.g. interview at Infosys next week) if mentioned, else null.' },
     facts: { type: 'array', items: { type: 'string' }, description: 'Up to 4 other short personal facts worth remembering.' },
+    next_hook: {
+      type: 'string',
+      description: 'ONE short teaser (max 12 words, English) for tomorrow, based on something they said, e.g. "Tomorrow: tell me how the client call went." Must make them curious to come back.',
+    },
     coach_note_ml: {
       type: 'string',
       description: 'A warm 1–2 sentence closing note to the learner, in simple Malayalam (Malayalam script) mixed with a little English, praising something specific and naming the one habit to watch.',
@@ -203,6 +208,7 @@ Mistakes corrected this session: ${mistakes.map((m) => m.label).join('; ') || 'n
       goals: null,
       facts: [],
       coach_note_ml: 'നന്നായി സംസാരിച്ചു! 👏 അടുത്ത തവണ "discuss about" ഒഴിവാക്കാൻ ശ്രദ്ധിക്കൂ.',
+      next_hook: 'Tomorrow: tell me how your testing work is going.',
     }),
   });
 }
