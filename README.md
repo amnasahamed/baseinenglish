@@ -58,7 +58,7 @@ All the teaching logic (persona, the "one fix" rules, the list of common Malayal
 - `MESSAGE_PROVIDER=console` (default) prints codes and reminders in the server log. This is fine for local testing or for hand-holding a small pilot.
 - `twilio_whatsapp` or `twilio_sms` sends via Twilio. Fill in `TWILIO_*`.
 - `webhook` POSTs `{to, text, kind}` to `MESSAGE_WEBHOOK_URL`. Use this for Zoho CPaaS or any Indian WhatsApp provider.
-- `OTP_TEST_NUMBERS` + `OTP_TEST_CODE` set a fixed code for specific test phones.
+- `OTP_TEST_NUMBERS` + `OTP_TEST_CODE` set a fixed code for specific test phones. With `OTP_TEST_NUMBERS=*`, **every** number logs in with that code and the code screen says so. `render.yaml` ships with `*` and `000000` for the pilot. Remove both once WhatsApp is connected, because until then anyone who knows a number can open that account.
 
 **Proactive check-ins:** learners who turn on reminders (onboarding or Settings) get one short, personal message on days they haven't practised. The message is written from Base's memory of them, e.g. "How did your interview go?". Set `NUDGE_HOUR` to send these automatically, or run `npm run nudges` from a cron job. The message also appears in the app as a card from Base. Note: WhatsApp business-initiated messages usually need an approved template with your provider.
 

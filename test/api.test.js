@@ -125,3 +125,23 @@ test('logging in on a new device merges the guest into the existing account', as
   const me = await call('/me');
   assert.equal(me.data.user.jobRole, 'software tester');
 });
+
+test('pilot mode: OTP_TEST_NUMBERS=* lets any number log in with the fixed code', async () => {
+  const { config } = await import('../server/config.js');
+  const prev = [config.otpTestNumbers, config.otpTestCode];
+  config.otpTestNumbers = ['*'];
+  config.otpTestCode = '000000';
+  try {
+    cookie = '';
+    const r = await call('/auth/request-otp', { method: 'POST', body: { phone: '9876543210' } });
+    assert.equal(r.data.provider, 'fixed');
+    assert.equal(r.data.pilotCode, '000000');
+    assert.equal((await call('/auth/verify', { method: 'POST', body: { phone: '+919876543210', code: '123456' } })).status, 400);
+    await call('/auth/request-otp', { method: 'POST', body: { phone: '9876543210' } });
+    const ok = await call('/auth/verify', { method: 'POST', body: { phone: '+919876543210', code: '000000' } });
+    assert.equal(ok.status, 200);
+    assert.equal(ok.data.user.isGuest, false);
+  } finally {
+    [config.otpTestNumbers, config.otpTestCode] = prev;
+  }
+});

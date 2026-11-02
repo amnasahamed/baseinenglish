@@ -5,7 +5,7 @@ import multer from 'multer';
 import { config } from './config.js';
 import * as store from './db.js';
 import { db, logEvent, safeJson } from './db.js';
-import { identify, normalizePhone, requestOtp, verifyOtp, logout } from './auth.js';
+import { identify, normalizePhone, requestOtp, verifyOtp, logout, isFixedCodeNumber } from './auth.js';
 import { transcribe, speak } from './openai.js';
 import { coachTurn, personalOpener, summarizeSession } from './coach.js';
 import { compareSpoken } from './compare.js';
@@ -175,7 +175,8 @@ api.post(
     if (!phone) throw httpError(400, 'Please enter a valid mobile number.');
     await requestOtp(phone, req.body?.channel);
     logEvent(req.user.id, 'otp_requested');
-    res.json({ ok: true, phone, provider: config.messageProvider === 'console' ? 'console' : 'sent' });
+    const provider = isFixedCodeNumber(phone) ? 'fixed' : config.messageProvider === 'console' ? 'console' : 'sent';
+    res.json({ ok: true, phone, provider, ...(provider === 'fixed' && config.otpTestNumbers.includes('*') ? { pilotCode: config.otpTestCode } : {}) });
   }),
 );
 

@@ -20,6 +20,11 @@ services:
         value: "1"
       - key: MESSAGE_PROVIDER
         value: console
+      # Pilot: every number logs in with 000000. Delete these two once WhatsApp/SMS is connected.
+      - key: OTP_TEST_NUMBERS
+        value: "*"
+      - key: OTP_TEST_CODE
+        value: "000000"
       - key: FREE_TRIAL_SESSIONS
         value: "7"
       - key: DAILY_SESSION_LIMIT

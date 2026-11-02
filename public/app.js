@@ -1479,7 +1479,7 @@ async function renderLogin() {
       btn.disabled = true;
       try {
         const r = await api('/auth/request-otp', { method: 'POST', body: { phone } });
-        stepCode(r.phone, r.provider);
+        stepCode(r.phone, r.provider, r.pilotCode);
       } catch (err) {
         f.querySelector('.err').textContent = err.message;
         btn.disabled = false;
@@ -1489,11 +1489,11 @@ async function renderLogin() {
     f.querySelector('input').focus();
   };
 
-  const stepCode = (phone, provider) => {
+  const stepCode = (phone, provider, pilotCode) => {
     box.innerHTML = '';
     const f = h(`<form>
       <h1>Enter the code</h1>
-      <p class="lead">Sent to ${esc(phone)}. ${provider === 'console' ? '<br/><span class="small">(Pilot mode: the code is in the server log.)</span>' : ''}</p>
+      <p class="lead">${pilotCode ? `Pilot version: enter <b>${esc(pilotCode)}</b> for any number.` : `Sent to ${esc(phone)}.`} ${provider === 'console' ? '<br/><span class="small">(Pilot mode: the code is in the server log.)</span>' : ''}</p>
       <div class="field otp"><input type="text" inputmode="numeric" autocomplete="one-time-code" maxlength="6" placeholder="••••••" aria-label="6-digit code" required /></div>
       <div class="err"></div>
       <button class="btn block" style="margin-top:6px">Verify</button>

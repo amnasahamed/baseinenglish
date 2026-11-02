@@ -66,6 +66,12 @@ export function normalizePhone(input) {
   return /^\+\d{8,15}$/.test(p) ? p : null;
 }
 
+/** Pilot mode: OTP_TEST_NUMBERS="*" lets every number log in with OTP_TEST_CODE (no SMS/WhatsApp needed). */
+export function isFixedCodeNumber(phone) {
+  if (!config.otpTestCode) return false;
+  return config.otpTestNumbers.includes('*') || config.otpTestNumbers.includes(phone);
+}
+
 const hashCode = (phone, code) => crypto.createHash('sha256').update(`${config.sessionSecret}|${phone}|${code}`).digest('hex');
 
 export async function requestOtp(phone, channel) {
@@ -75,7 +81,7 @@ export async function requestOtp(phone, channel) {
     err.status = 429;
     throw err;
   }
-  const isTest = config.otpTestCode && config.otpTestNumbers.includes(phone);
+  const isTest = isFixedCodeNumber(phone);
   const code = isTest ? config.otpTestCode : String(crypto.randomInt(100000, 1000000));
   db.prepare(
     `INSERT INTO otps (phone, code_hash, expires_at, attempts, sent_at) VALUES (?, ?, ?, 0, ?)
