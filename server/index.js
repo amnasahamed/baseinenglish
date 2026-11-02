@@ -445,6 +445,8 @@ api.post('/events', (req, res) => {
 
 app.use('/api', api);
 
+app.get('/healthz', (req, res) => res.json({ ok: true }));
+
 // Pilot dashboard numbers (no cookie needed).
 app.get('/api/admin/stats', (req, res) => {
   if (!config.adminToken || req.query.token !== config.adminToken) return res.status(401).json({ error: 'unauthorized' });

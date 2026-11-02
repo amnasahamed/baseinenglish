@@ -18,6 +18,21 @@ Requires **Node 22.13+**. The database uses the built-in `node:sqlite`, so there
 
 > Microphone access needs **HTTPS** (or `localhost`). For phones on a pilot, deploy behind HTTPS and set `COOKIE_SECURE=1`.
 
+## Deploy
+
+**Render (recommended, about 10 minutes):** push this repo to GitHub, then in Render choose **New → Blueprint** and pick the repo. `render.yaml` sets up a Docker web service in Singapore with a 1 GB persistent disk for the database, a generated `SESSION_SECRET` and `ADMIN_TOKEN`, HTTPS, and daily check-ins at 7pm IST. Paste your `OPENAI_API_KEY` when asked, then set `PUBLIC_URL` to the address Render gives you.
+
+**Any Docker host** (Railway, Fly.io, a VPS):
+
+```bash
+docker build -t base-in-english .
+```
+```bash
+docker run -p 3000:3000 -v base-data:/data --env-file .env base-in-english
+```
+
+Always mount a volume at `/data`: it holds the SQLite database and the voice cache. Put HTTPS in front (the microphone needs it) and set `COOKIE_SECURE=1`. The health check is `GET /healthz`.
+
 ## OpenAI setup (all configurable in `.env`)
 
 | Purpose | Default | Notes |

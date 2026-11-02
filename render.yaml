@@ -1,0 +1,34 @@
+# One-click deploy on Render: New → Blueprint → pick this repo.
+# You'll be asked for OPENAI_API_KEY (and optionally ADMIN_TOKEN / Twilio keys).
+services:
+  - type: web
+    name: base-in-english
+    runtime: docker
+    plan: starter
+    region: singapore
+    healthCheckPath: /healthz
+    disk:
+      name: data
+      mountPath: /data
+      sizeGB: 1
+    envVars:
+      - key: OPENAI_API_KEY
+        sync: false
+      - key: SESSION_SECRET
+        generateValue: true
+      - key: COOKIE_SECURE
+        value: "1"
+      - key: MESSAGE_PROVIDER
+        value: console
+      - key: FREE_TRIAL_SESSIONS
+        value: "7"
+      - key: DAILY_SESSION_LIMIT
+        value: "5"
+      - key: NUDGE_HOUR
+        value: "19"
+      - key: ADMIN_TOKEN
+        generateValue: true
+      - key: PUBLIC_URL
+        sync: false
+      - key: UPGRADE_URL
+        sync: false
