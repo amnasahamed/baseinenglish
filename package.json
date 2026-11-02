@@ -1,0 +1,22 @@
+{
+  "name": "baseinenglish",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Low-pressure daily English speaking practice for Malayalam speakers",
+  "type": "module",
+  "main": "server/index.js",
+  "engines": {
+    "node": ">=22.13"
+  },
+  "scripts": {
+    "start": "node --no-warnings=ExperimentalWarning --env-file-if-exists=.env server/index.js",
+    "dev": "node --no-warnings=ExperimentalWarning --env-file-if-exists=.env --watch server/index.js",
+    "mock": "MOCK_AI=1 node --no-warnings=ExperimentalWarning --env-file-if-exists=.env server/index.js",
+    "test": "node --no-warnings=ExperimentalWarning --test test/*.test.js",
+    "nudges": "node --no-warnings=ExperimentalWarning --env-file-if-exists=.env server/nudges.js"
+  },
+  "dependencies": {
+    "express": "^5.1.0",
+    "multer": "^2.0.2"
+  }
+}

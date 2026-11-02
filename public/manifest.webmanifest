@@ -1,0 +1,10 @@
+{
+  "name": "Base in English",
+  "short_name": "Base English",
+  "description": "Daily English speaking practice for Malayalam speakers",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#FBF6EC",
+  "theme_color": "#0E5A4A",
+  "icons": [{ "src": "/icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }]
+}
