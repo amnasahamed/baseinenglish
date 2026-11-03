@@ -9,7 +9,7 @@ import { identify, normalizePhone, requestOtp, verifyOtp, logout, isFixedCodeNum
 import { transcribe, speak } from './openai.js';
 import { coachTurn, personalOpener, summarizeSession } from './coach.js';
 import { compareSpoken } from './compare.js';
-import { scenarioById, publicScenarios } from './scenarios.js';
+import { scenarioById, publicScenarios, units } from './scenarios.js';
 import { startNudgeScheduler } from './nudges.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -120,6 +120,51 @@ api.post('/settings', (req, res) => {
   const u = store.updateSettings(req.user.id, { dailyGoalMin, reminders, onboarded });
   if (reminders !== undefined) logEvent(u.id, reminders ? 'reminders_on' : 'reminders_off');
   res.json({ user: publicUser(u) });
+});
+
+// ─── Learning path ───────────────────────────────────────────
+const NODE_XP = { chest: 30, trophy: 60 };
+function buildPath(userId) {
+  const runs = store.nodeRuns(userId);
+  let foundCurrent = false;
+  return units.map((u) => ({
+    id: u.id,
+    n: u.n,
+    title: u.title,
+    ml: u.ml,
+    color: u.color,
+    nodes: u.nodes.map((nd) => {
+      const r = runs[nd.id] || 0;
+      let state = r > 0 ? 'done' : 'locked';
+      if (!r && !foundCurrent) {
+        state = 'current';
+        foundCurrent = true;
+      }
+      const sc = scenarioById[nd.id];
+      const base = { id: nd.id, type: nd.type, state, runs: r };
+      if (nd.type === 'lesson') return { ...base, title: sc.title, subtitle: sc.subtitle, partner: sc.partnerLabel, xp: 15 };
+      if (nd.type === 'review') return { ...base, title: 'Fix your mistakes', subtitle: 'A 2-minute warm-up on your own mistakes', xp: 20 };
+      return { ...base, title: nd.type === 'trophy' ? 'Unit trophy' : 'Reward chest', subtitle: 'Open it to collect XP', xp: NODE_XP[nd.type] };
+    }),
+  }));
+}
+
+api.get('/path', (req, res) => {
+  res.json({ units: buildPath(req.user.id) });
+});
+
+/** Finish a non-lesson node: open a chest/trophy, or a review when there are no mistakes to practise. */
+api.post('/path/:node/complete', (req, res) => {
+  const node = units.flatMap((u) => u.nodes).find((n) => n.id === req.params.node);
+  if (!node || node.type === 'lesson') throw httpError(400, 'Not a reward or review node');
+  const cur = buildPath(req.user.id).flatMap((u) => u.nodes).find((n) => n.id === node.id);
+  if (cur.state === 'locked') throw httpError(409, 'Finish the earlier steps first');
+  let gained = 0;
+  if (cur.state === 'current') {
+    store.completeNode(req.user.id, node.id);
+    if (NODE_XP[node.type]) gained = store.awardXp(req.user.id, `node:${node.id}`, NODE_XP[node.type]);
+  }
+  res.json({ gained, units: buildPath(req.user.id), level: store.levelFor(store.getUser(req.user.id).xp) });
 });
 
 api.post('/quests/claim', (req, res) => {
@@ -340,6 +385,7 @@ api.post(
         console.error('[summary]', e.message);
       }
       logEvent(u.id, 'session_complete', { turns: learnerMsgs.length, scenario: scenario.id }, session.id);
+      store.completeNode(u.id, scenario.id);
     }
     db.prepare('UPDATE sessions SET ended_at = COALESCE(ended_at, ?), done = ? WHERE id = ?').run(
       store.now(),
@@ -363,6 +409,7 @@ api.post(
       milestone: daily.milestone,
       newBadges,
       quests: store.dailyQuests(u.id),
+      firstToday: db.prepare('SELECT started_at FROM sessions WHERE user_id = ? AND done = 1').all(u.id).filter((x) => store.dayOf(new Date(x.started_at)) === store.dayOf()).length === 1,
       secondsSpoken: store.getSession(session.id).seconds_spoken,
       turns: learnerMsgs.length,
       mistakes: mistakes.map(publicMistake),
@@ -417,6 +464,8 @@ api.get('/warmup', (req, res) => {
 
 api.post('/warmup/done', (req, res) => {
   logEvent(req.user.id, 'warmup_done', { passed: Number(req.body?.passed) || 0, total: Number(req.body?.total) || 0 });
+  const reviewNode = units.flatMap((u) => u.nodes).find((n) => n.id === req.body?.node && n.type === 'review');
+  if (reviewNode) store.completeNode(req.user.id, reviewNode.id);
   const gained = Number(req.body?.passed) ? store.awardXp(req.user.id, 'warmup_done', store.XP.warmup_done, { once: true }) : 0;
   res.json({ ok: true, stats: store.getStats(req.user.id), rewards: rewards(req.user.id, gained) });
 });

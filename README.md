@@ -70,6 +70,18 @@ All the teaching logic (persona, the "one fix" rules, the list of common Malayal
 - **Share my progress:** generates a branded 1080×1350 image for WhatsApp status or Instagram stories, with the learner's invite link.
 - **Settings:** daily goal, reminders, profile, plan, help, privacy policy, terms and the 10-day refund promise, log out, and delete account and data. Fill in the `[COMPANY NAME]` / `[CONTACT]` placeholders in `public/app.js` (`renderLegal`) before launch.
 
+## App structure (v3)
+
+The app is built around the same ideas as the best language apps, with our own look and content:
+
+- **Welcome:** the mascot (Base, a little green friend with a coconut-leaf sprout) says hi. One button starts the first lesson; there's no signup.
+- **Learn tab (the path):** 3 units (Job interviews, At the office, Everyday life), each a zig-zag of chunky steps. A step is a lesson (a conversation), a review (a warm-up on your own mistakes), or a reward chest/trophy. Steps unlock in order; the current one bobs with a "START" bubble and the mascot beside it. Tapping a step opens a card with what it is and the XP it's worth. The path is defined in `server/scenarios.js` (`units`).
+- **Lesson:** one exchange per screen. The mascot asks (and talks, thinks or cheers), you answer with the big 3D mic, and feedback slides up from the bottom: green "Nice!" or gold "Almost! Say it like this" with the Malayalam explanation and a **Say it out loud** button. You continue only after that. A progress bar sits on top, with a combo flame and hands-free mode.
+- **Lesson complete:** XP, speaking time and no-fix replies count up, the level bar fills, and badges pop in. Next comes the streak screen (first lesson of the day), then saving progress (guests) or tomorrow's teaser plus daily quests.
+- **Practice tab:** mistake warm-up, Mistake Bank, and free talk (replay any unlocked conversation).
+- **Progress tab:** level, streak and daily goal, quests, weekly speaking insights, and invite a friend.
+- **Profile tab:** plan, daily goal, reminders, sounds, about you, help and legal.
+
 ## Habit loop (why people come back)
 
 Borrowed from the best habit apps, tuned to be encouraging rather than guilt-driven:

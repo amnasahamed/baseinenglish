@@ -75,6 +75,9 @@ const I = {
   chat: (s) => svg('<path d="M21 12a8 8 0 0 1-11.8 7L4 20l1.1-4.5A8 8 0 1 1 21 12z"/>', { size: s || 22 }),
   trash: (s) => svg('<path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13"/>', { size: s || 22 }),
   target: (s) => svg('<circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="5"/><circle cx="12" cy="12" r="1"/>', { size: s || 22 }),
+  path: (s) => svg('<circle cx="6" cy="19" r="2.5"/><circle cx="18" cy="5" r="2.5"/><path d="M8.5 19H15a3.5 3.5 0 0 0 0-7H9a3.5 3.5 0 0 1 0-7h6.5"/>', { size: s || 24, sw: 2.2 }),
+  chart: (s) => svg('<path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/>', { size: s || 24, sw: 2.2 }),
+  user: (s) => svg('<circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/>', { size: s || 24, sw: 2.2 }),
   snow: (s) => svg('<path d="M12 2v20M4.9 6l14.2 12M4.9 18L19.1 6M9 3.5l3 2.5 3-2.5M9 20.5l3-2.5 3 2.5"/>', { size: s || 18 }),
   chest: (s) => svg('<path d="M3 10a4 4 0 0 1 4-4h10a4 4 0 0 1 4 4v9H3zM3 12h18M10 12v3h4v-3"/>', { size: s || 24 }),
   star: (s) => `<svg width="${s || 24}" height="${s || 24}" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 2.5l2.9 6.1 6.6.8-4.9 4.6 1.3 6.6L12 17.3l-5.9 3.3 1.3-6.6-4.9-4.6 6.6-.8z"/></svg>`,
@@ -248,7 +251,7 @@ const recorder = new Recorder();
  * Turns a button into a tap-to-talk control. Calls onAudio({blob,type,duration}) when the learner taps stop.
  * Returns {setBusy, isRecording, cancel}.
  */
-function micControl(btn, { onAudio, onState, maxSec = 120, icon = MIC_SVG, autoStop }) {
+function micControl(btn, { onAudio, onState, maxSec = 120, icon = MIC_SVG, stopIcon = STOP_SVG, autoStop }) {
   let recording = false;
   let timer;
   let heard = false;
@@ -257,7 +260,7 @@ function micControl(btn, { onAudio, onState, maxSec = 120, icon = MIC_SVG, autoS
   const setUi = (state) => {
     recording = state === 'recording';
     btn.classList.toggle('recording', recording);
-    btn.innerHTML = (recording ? STOP_SVG : icon) + (ring ? '<span class="ring"></span>' : '');
+    btn.innerHTML = (recording ? stopIcon : icon) + (ring ? '<span class="ring"></span>' : '');
     btn.setAttribute('aria-label', recording ? 'Stop and send' : 'Tap to speak');
     onState?.(state);
   };
@@ -475,10 +478,12 @@ async function loadMe() {
 }
 
 const routes = [
-  [/^#?\/?$/, renderHome],
+  [/^#?\/?$/, renderLearn],
+  [/^#\/practice$/, renderPractice],
+  [/^#\/progress$/, renderProgress],
   [/^#\/talk\/(\w+)$/, renderTalk],
   [/^#\/bank$/, renderBank],
-  [/^#\/warmup$/, renderWarmup],
+  [/^#\/warmup(?:\/(\w+))?$/, renderWarmup],
   [/^#\/login$/, renderLogin],
   [/^#\/profile$/, renderSettings],
   [/^#\/settings$/, renderSettings],
@@ -505,6 +510,7 @@ async function router() {
         $app.innerHTML = '';
         $app.append(emptyState(I.sparkle(), 'Something went wrong', esc(e.message), `<button class="btn" onclick="location.reload()">Try again</button>`));
       }
+      setTabbar(hash);
       // Gentle screen entrance + move focus to the new screen's heading for screen readers.
       $app.classList.remove('enter');
       void $app.offsetWidth;
@@ -620,218 +626,309 @@ async function renderBadges() {
   $app.append(h(`<p class="foot-note">How to earn XP: reply (+10), reply with no fix (+5), say a fix out loud (+10), master a mistake (+25), hit your daily goal (+30), open the quest chest (+50).</p>`));
 }
 
-function skeletonHome() {
-  $app.innerHTML = `<div class="skel" aria-hidden="true"><div class="sk sk-bar" style="width:90px"></div><div class="sk" style="height:38px;width:70%;margin-top:28px"></div><div class="sk" style="height:16px;width:85%;margin-top:12px"></div><div class="sk" style="height:150px;margin-top:20px;border-radius:26px"></div><div class="sk" style="height:110px;margin-top:14px;border-radius:22px"></div></div>`;
-}
+// ═══════════════════════════════════════════════════════════════
+//  v3 — path-first app: welcome, learning path, tabs, lesson, rewards
+// ═══════════════════════════════════════════════════════════════
 
-async function renderHome() {
-  if (!state.me) skeletonHome();
-  const [me, sc] = await Promise.all([loadMe(), state.scenarios || api('/scenarios')]);
-  state.scenarios = sc;
-  const s = me.stats;
-  const isNew = s.sessionsDone === 0;
-  $app.innerHTML = '';
-  $app.append(topbar());
-  const [c1, c2, c3] = sc.categories;
+/** The mascot: Base, a round green friend with a little coconut-leaf sprout. */
+const mascot = (size = 'md', mood = '') =>
+  `<span class="mascot m-${size} ${mood}" aria-hidden="true"><span class="m-leaf"><i></i><i></i></span><span class="m-body"><span class="eyes"><i></i><i></i></span><span class="cheeks"><i></i><i></i></span><span class="smile"></span></span></span>`;
 
-  if (isNew) {
-    $app.querySelector('.topbar').classList.add('clear');
-    $app.append(
-      h(`<section class="hero">
-        <div class="blob"></div><div class="dot-deco"></div>
-        <h1 class="ml">English മനസ്സിലാകും.<br />സംസാരിക്കാൻ <span class="squiggle">മടി${SQUIGGLE}</span>, അല്ലേ?</h1>
-        <p class="lead">Practise speaking with a patient partner. No rush, no judging — just you and your voice.</p>
-        <div class="say-hi">${avatar()}<div class="b">Hi! I'm Base. Take all the time you need — I'll wait.</div></div>
-        <div class="bento">
-          <button class="tile hero-tile" data-scenario="${c1.defaultScenario}"><span class="ic" style="color:var(--ink)">${CAT_ICON[c1.id](26)}</span><span><span class="t">Job interview</span><br /><span class="s">${esc(c1.titleMl)}</span></span></button>
-          <button class="tile" data-scenario="${c2.defaultScenario}"><span class="ic" style="color:var(--green)">${CAT_ICON[c2.id]()}</span><span><span class="t">At the office</span><br /><span class="s">${esc(c2.titleMl)}</span></span></button>
-          <button class="tile gold-ic" data-scenario="${c3.defaultScenario}"><span class="ic" style="color:var(--gold-ink)">${CAT_ICON[c3.id]()}</span><span><span class="t">Daily life</span><br /><span class="s">${esc(c3.titleMl)}</span></span></button>
-        </div>
-        <div class="sticker">${I.buoy()}<div><b>Stuck on a word?</b><div class="ml">മലയാളത്തിൽ പറഞ്ഞോളൂ — ഞങ്ങൾ English പഠിപ്പിക്കാം.</div></div></div>
-        <div class="foot-note">Free to try · No signup · 5 minutes a day</div>
-      </section>`),
-    );
-  } else {
-    const first = me.user.name ? esc(me.user.name.split(' ')[0]) : '';
-    const hr = Number(new Intl.DateTimeFormat('en-IN', { hour: 'numeric', hour12: false, timeZone: 'Asia/Kolkata' }).format(new Date()));
-    const greet = hr < 12 ? 'Morning' : hr < 17 ? 'Hi' : 'Evening';
-    const todayIdx = s.week.length - 1;
-    const week = s.week
-      .map((d, i) => {
-        const wd = new Date(d.day + 'T12:00:00').toLocaleDateString('en-IN', { weekday: 'narrow' });
-        return `<div class="d ${i === todayIdx ? 'today' : ''}"><div class="bar ${d.practiced ? 'on' : ''}"></div>${wd}</div>`;
-      })
-      .join('');
-    const a = me.allowance;
-    $app.append(
-      h(`<section>
-        <h1>${greet}${first ? ', ' + first : ''}</h1>
-        <p class="lead" style="margin-bottom:16px">${s.practicedToday ? 'Nice — you practised today. One more?' : 'A few minutes of speaking keeps the fear away.'}</p>
-        <div class="streak-card">
-          <div class="streak-top">
-            <span style="color:var(--gold)">${I.flame(34)}</span>
-            <span class="n">${s.streak}</span><span class="l">day streak</span>
-            <span class="side">${goalRing(s.secondsToday, me.user.dailyGoalMin || 5)}<span class="goal-l">today's goal</span></span>
-          </div>
-          <div class="week">${week}</div>
-          ${me.level ? `<a class="lvl-row" href="#/badges"><span class="lv-badge">${me.level.level}</span><span class="lv-txt"><b>${esc(me.level.name)}</b><span class="lv-bar"><i style="width:${Math.round(me.level.progress * 100)}%"></i></span><span class="lv-sub">${me.level.next ? `${me.level.next - me.level.xp} XP to level ${me.level.level + 1}` : 'Top level!'}</span></span>${me.freezes ? `<span class="freeze" title="Streak freeze: protects your streak if you miss a day">${I.snow(16)} ${me.freezes}</span>` : ''}</a>` : ''}
-        </div>
-      </section>`),
-    );
-    // Streak at risk (evening, not practised yet): a gentle, honest nudge — not a guilt trip.
-    const hourNow = Number(new Intl.DateTimeFormat('en-GB', { hour: 'numeric', hour12: false, timeZone: 'Asia/Kolkata' }).format(new Date()));
-    if (s.streak >= 2 && !s.practicedToday && hourNow >= 17) {
-      $app.append(h(`<div class="risk">${I.flame(20)}<span>Keep your <b>${s.streak}-day streak</b> alive — 2 minutes is enough tonight.${me.freezes ? ` (You also have ${me.freezes} freeze${me.freezes > 1 ? 's' : ''} saved.)` : ''}</span></div>`));
-    }
-    const resume = me.lastScenario || sc.categories[0].defaultScenario;
-    $app.append(
-      h(`<button class="cta-big" data-scenario="${resume}">
-        <span class="cta-mic">${I.mic(30)}</span>
-        <span class="cta-txt"><b>${s.practicedToday ? 'Keep talking' : "Start today's practice"}</b><span>${me.nextHook ? esc(me.nextHook) : 'A quick 5-minute chat with Base'}</span></span>
-      </button>`),
-    );
-    if (me.quests) $app.append(questCard(me.quests));
-    if (me.nudge) {
-      const n = h(`<div class="nudge" role="status">${avatar()}<div class="b"><div class="who">Base</div>${esc(me.nudge.text)}</div><button class="x" aria-label="Dismiss">${I.close(14)}</button></div>`);
-      n.querySelector('.x').addEventListener('click', () => {
-        api(`/nudges/${me.nudge.id}/read`, { method: 'POST' }).catch(() => {});
-        n.remove();
-      });
-      $app.append(n);
-    }
-    if (me.warmup.due) {
-      $app.append(
-        h(`<a class="feature gold" href="#/warmup"><span class="ic" style="color:var(--gold)">${I.bolt()}</span><span><b>2-minute warm-up</b><span class="s">${me.warmup.pending} of your own mistakes</span></span><span class="go">${I.chev(22)}</span></a>`),
-      );
-    }
-    $app.append(h(`<h2>Talk about something</h2>`));
-    $app.append(
-      h(`<div class="tiles-3">${sc.categories
-        .map(
-          (c, i) =>
-            `<button class="tile ${i === 0 ? 'green' : ''}" data-scenario="${c.defaultScenario}"><span style="color:${i === 0 ? 'var(--gold)' : i === 1 ? 'var(--green)' : 'var(--gold-ink)'}">${CAT_ICON[c.id]()}</span><span class="t">${esc(['Interview', 'Office', 'Daily life'][i] || c.title)}</span></button>`,
-        )
-        .join('')}</div>`),
-    );
-    const ins = me.insights;
-    if (ins && ins.replies) {
-      $app.append(h(`<h2>Your speaking this week</h2>`));
-      $app.append(
-        h(`<div class="insights">
-          <div class="ins"><div class="v">${ins.wordsPerReply}</div><div class="l">words per reply</div>${trendLine(ins.wordsPerReply, ins.wordsPerReplyPrev, '')}<div class="hint">Longer answers = more confidence</div></div>
-          <div class="ins"><div class="v">${ins.cleanReplyRate}<small>%</small></div><div class="l">replies with no fix needed</div><div class="hint">${ins.replies} replies this week</div></div>
-          <div class="ins"><div class="v">${ins.lifelineWords}</div><div class="l">Malayalam words used</div>${trendLine(ins.lifelineWords, ins.lifelineWordsPrev, '', true)}<div class="hint">Fewer over time = growing vocabulary</div></div>
-          <div class="ins"><div class="v">${ins.masteredThisWeek}</div><div class="l">old mistakes mastered</div><div class="hint">${ins.daysThisWeek}/7 days practised</div></div>
-        </div>`),
-      );
-    }
-    if (!me.user.isGuest) {
-      $app.append(
-        h(`<a class="feature invite" href="#/invite"><span class="ic" style="background:var(--gold-soft);color:var(--gold-ink)">${I.gift()}</span><span><b>Practise with a friend</b><span class="s">Invite someone — you both get free sessions</span></span><span class="go">${I.chev(22)}</span></a>`),
-      );
-    }
-    if (s.mistakesTotal) {
-      $app.append(
-        h(`<a class="line-link" href="#/bank" style="margin-top:14px">${I.book()}<span>Mistake Bank <span class="s">· ${s.mistakesTotal - s.mistakesMastered} to practise</span></span><span class="go" style="color:var(--muted)">${I.chev()}</span></a>`),
-      );
-    }
-    const more = h(`<div class="list-card"></div>`);
-    for (const x of sc.scenarios) {
-      more.append(
-        h(`<button class="list-btn" data-scenario="${x.id}"><span><span class="t">${esc(x.title)}</span><br /><span class="s">${esc(x.subtitle)}</span></span><span class="go" style="color:var(--muted)">${I.chev()}</span></button>`),
-      );
-    }
-    $app.append(h(`<h2>All situations</h2>`), more);
-    const note =
-      a.plan === 'trial' && a.canStart
-        ? `${a.remaining} free practice session${a.remaining === 1 ? '' : 's'} left`
-        : a.plan === 'guest' && !a.canStart
-          ? `<a href="#/login">Log in</a> to save your progress and keep practising.`
-          : '';
-    if (note) $app.append(h(`<p class="foot-note">${note}</p>`));
-    if (me.mock) $app.append(h(`<p class="small center">Demo mode (MOCK_AI) — replies are canned.</p>`));
+const NODE_ICON = { lesson: () => I.mic(30), review: () => I.bolt(30), chest: () => I.chest(32), trophy: () => I.trophy(32) };
+
+// ─── Bottom tab bar ──────────────────────────────────────────
+const TABS = [
+  ['#/', 'Learn', () => I.path()],
+  ['#/practice', 'Practice', () => I.bolt(24)],
+  ['#/progress', 'Progress', () => I.chart()],
+  ['#/settings', 'Profile', () => I.user()],
+];
+function setTabbar(hash) {
+  document.querySelector('.tabbar')?.remove();
+  const tabHashes = TABS.map((t) => t[0]);
+  const active = hash === '' || hash === '#' ? '#/' : hash;
+  if (!tabHashes.includes(active) || (active === '#/' && state.welcome)) {
+    document.body.classList.remove('has-tabs');
+    return;
   }
-  $app.querySelectorAll('[data-scenario]').forEach((b) =>
-    b.addEventListener('click', () => {
-      unlockAudio();
-      go(`#/talk/${b.dataset.scenario}`);
-    }),
-  );
+  document.body.classList.add('has-tabs');
+  const bar = h(`<nav class="tabbar" aria-label="Main">${TABS.map(
+    ([href, label, icon]) => `<a href="${href}" class="tab ${href === active ? 'on' : ''}" ${href === active ? 'aria-current="page"' : ''}>${icon()}<span>${label}</span></a>`,
+  ).join('')}</nav>`);
+  bar.querySelectorAll('a').forEach((a) => a.addEventListener('click', () => sfx.tap()));
+  document.body.append(bar);
 }
 
-// ─── Conversation ────────────────────────────────────────────
+/** Top stats strip used on the tab screens. */
+function statsBar() {
+  const me = state.me;
+  const s = me.stats;
+  const el = h(`<header class="statsbar">
+    <a class="brand" href="#/" aria-label="Home">${LOGO}</a>
+    <span class="spacer"></span>
+    <a class="stat-chip flame ${s.practicedToday ? 'lit' : ''}" href="#/progress" aria-label="${s.streak} day streak">${I.flame(20)}<b>${s.streak}</b></a>
+    <a class="stat-chip xp" href="#/badges" aria-label="${me.level.xp} XP, level ${me.level.level}">${I.bolt(18)}<b>${me.level.xp}</b></a>
+    ${me.freezes ? `<span class="stat-chip ice" title="Streak freezes saved">${I.snow(18)}<b>${me.freezes}</b></span>` : ''}
+    ${me.user.isGuest ? `<a class="stat-chip login" href="#/login">Log in</a>` : ''}
+  </header>`);
+  return el;
+}
+
+// ─── Welcome (first visit) ───────────────────────────────────
+function renderWelcome() {
+  state.welcome = true;
+  $app.innerHTML = '';
+  const el = h(`<section class="welcome">
+    <div class="w-sky"><span class="w-sun"></span><span class="w-wave w1"></span><span class="w-wave w2"></span></div>
+    <div class="w-hero">${mascot('xl', 'wave')}<div class="w-bubble">Hi! I'm Base.<br/>Let's speak English — no pressure.</div></div>
+    <h1 class="ml w-title">English മനസ്സിലാകും.<br/>സംസാരിക്കാൻ <span class="squiggle">മടി${SQUIGGLE}</span>, അല്ലേ?</h1>
+    <ul class="w-points">
+      <li>${I.mic(18)}<span>Speak at your own pace — pauses are fine</span></li>
+      <li>${I.buoy(18)}<span class="ml">വാക്ക് കിട്ടിയില്ലെങ്കിൽ മലയാളത്തിൽ പറയാം</span></li>
+      <li>${I.check(16)}<span>One clear fix at a time, explained in Malayalam</span></li>
+    </ul>
+    <div class="w-cta">
+      <button class="b3d green block" data-start>Get started</button>
+      <a class="b3d ghost block" href="#/login">I already have an account</a>
+    </div>
+  </section>`);
+  el.querySelector('[data-start]').addEventListener('click', () => {
+    unlockAudio();
+    sfx.tap();
+    go('#/talk/interview_intro');
+  });
+  $app.append(el);
+}
+
+// ─── Learn: the path ─────────────────────────────────────────
+const ZIG = [0, 56, 84, 56, 0, -56, -84, -56];
+
+async function renderLearn() {
+  state.welcome = false;
+  if (!state.me) $app.innerHTML = `<div class="skel" aria-hidden="true"><div class="sk" style="height:44px"></div><div class="sk" style="height:96px;margin-top:20px;border-radius:24px"></div><div class="sk" style="height:84px;width:84px;border-radius:50%;margin:40px auto 0"></div></div>`;
+  const [me, path] = await Promise.all([loadMe(), api('/path')]);
+  if (me.user.isGuest && me.stats.sessionsDone === 0) return renderWelcome();
+  $app.innerHTML = '';
+  $app.append(statsBar());
+
+  if (me.nudge) {
+    const n = h(`<div class="nudge">${mascot('sm')}<div class="b"><div class="who">Base</div>${esc(me.nudge.text)}</div><button class="x" aria-label="Dismiss">${I.close(14)}</button></div>`);
+    n.querySelector('.x').addEventListener('click', () => {
+      api(`/nudges/${me.nudge.id}/read`, { method: 'POST' }).catch(() => {});
+      n.remove();
+    });
+    $app.append(n);
+  }
+
+  const wrap = h(`<div class="path"></div>`);
+  let k = 0;
+  for (const u of path.units) {
+    const done = u.nodes.filter((n) => n.state === 'done').length;
+    wrap.append(
+      h(`<div class="unit-banner c-${u.color}">
+        <div><div class="u-k">UNIT ${u.n}</div><div class="u-t">${esc(u.title)}</div><div class="u-ml ml">${esc(u.ml)}</div></div>
+        <div class="u-prog" aria-label="${done} of ${u.nodes.length} done">${done}/${u.nodes.length}</div>
+      </div>`),
+    );
+    const list = h(`<div class="nodes"></div>`);
+    u.nodes.forEach((n) => {
+      const x = ZIG[k++ % ZIG.length];
+      const label = n.state === 'locked' ? `${n.title} (locked)` : n.title;
+      const node = h(`<div class="node-row" style="--x:${x}px">
+        <div class="node-wrap">
+          ${n.state === 'current' ? `<div class="start-tip">${n.type === 'lesson' ? 'START' : n.type === 'review' ? 'REVIEW' : 'OPEN'}</div>` : ''}
+          <button class="node t-${n.type} s-${n.state} c-${u.color}" aria-label="${esc(label)}" aria-expanded="false">
+            ${n.state === 'done' && n.type === 'lesson' ? I.check(30) : n.state === 'locked' && n.type === 'lesson' ? I.lock(26) : NODE_ICON[n.type]()}
+            ${n.runs > 1 ? `<span class="runs">×${n.runs}</span>` : ''}
+          </button>
+          ${n.state === 'current' ? `<span class="node-mascot">${mascot('sm', 'look')}</span>` : ''}
+        </div>
+      </div>`);
+      node.querySelector('.node').addEventListener('click', (e) => openNodeCard(e.currentTarget, n, u));
+      list.append(node);
+    });
+    wrap.append(list);
+  }
+  wrap.append(h(`<div class="path-end">${mascot('md', 'cheer')}<p>More units are on the way. Keep your streak going!</p></div>`));
+  $app.append(wrap);
+
+  // Bring the current step into view.
+  requestAnimationFrame(() => $app.querySelector('.node.s-current')?.scrollIntoView({ block: 'center', behavior: 'instant' }));
+}
+
+function openNodeCard(btn, n, u) {
+  document.querySelector('.node-card')?.remove();
+  document.querySelectorAll('.node[aria-expanded="true"]').forEach((b) => b.setAttribute('aria-expanded', 'false'));
+  sfx.tap();
+  const locked = n.state === 'locked';
+  const action =
+    n.type === 'lesson'
+      ? n.state === 'done'
+        ? `Practise again · +${n.xp} XP`
+        : `Start · +${n.xp} XP`
+      : n.type === 'review'
+        ? `Start review · +${n.xp} XP`
+        : `Open · +${n.xp} XP`;
+  const card = h(`<div class="node-card c-${locked ? 'locked' : u.color}" role="dialog" aria-label="${esc(n.title)}">
+    <div class="nc-t">${esc(n.title)}</div>
+    <div class="nc-s">${locked ? 'Finish the steps above to unlock this.' : n.state === 'done' && n.type !== 'lesson' ? 'Done!' : esc(n.subtitle)}${n.partner && !locked ? ` · Base plays: ${esc(n.partner)}` : ''}</div>
+    ${locked || (n.state === 'done' && n.type !== 'lesson') ? '' : `<button class="b3d white block">${action}</button>`}
+  </div>`);
+  btn.setAttribute('aria-expanded', 'true');
+  btn.closest('.node-row').after(card);
+  card.querySelector('button')?.addEventListener('click', async () => {
+    unlockAudio();
+    if (n.type === 'lesson') return go(`#/talk/${n.id}`);
+    if (n.type === 'review') return go(`#/warmup/${n.id}`);
+    const r = await api(`/path/${n.id}/complete`, { method: 'POST' }).catch((e) => toast(e.message));
+    if (r) {
+      sfx.level();
+      buzz([30, 50, 80]);
+      celebrate(`+${r.gained} XP`, n.type === 'trophy' ? 'Unit complete! അഭിനന്ദനങ്ങൾ!' : 'സമ്മാനം!');
+      setTimeout(renderLearn, 1200);
+    }
+  });
+  const close = (e) => {
+    if (!card.contains(e.target) && e.target !== btn && !btn.contains(e.target)) {
+      card.remove();
+      btn.setAttribute('aria-expanded', 'false');
+      document.removeEventListener('click', close, true);
+    }
+  };
+  setTimeout(() => document.addEventListener('click', close, true));
+}
+
+// ─── Practice tab ────────────────────────────────────────────
+async function renderPractice() {
+  state.welcome = false;
+  const [me, path] = await Promise.all([loadMe(), api('/path')]);
+  $app.innerHTML = '';
+  $app.append(statsBar());
+  $app.append(h(`<h1>Practice</h1>`));
+  const pending = me.warmup.pending;
+  $app.append(
+    h(`<a class="big-card gold" href="#/warmup"><span class="bc-ic">${I.bolt(28)}</span><span><b>Mistake warm-up</b><span>${pending ? `${pending} of your own mistakes · 2 min` : 'No mistakes yet — have a conversation first'}</span></span><span class="go">${I.chev(22)}</span></a>`),
+  );
+  $app.append(
+    h(`<a class="big-card white" href="#/bank"><span class="bc-ic" style="background:var(--green-soft);color:var(--green)">${I.book(26)}</span><span><b>Mistake Bank</b><span>${me.stats.mistakesTotal - me.stats.mistakesMastered} to practise · ${me.stats.mistakesMastered} mastered</span></span><span class="go">${I.chev(22)}</span></a>`),
+  );
+  $app.append(h(`<h2>Free talk</h2>`), h(`<p class="small" style="margin:-6px 0 12px">Replay any conversation you've unlocked.</p>`));
+  const grid = h(`<div class="free-grid"></div>`);
+  for (const u of path.units) {
+    for (const n of u.nodes.filter((x) => x.type === 'lesson')) {
+      const locked = n.state === 'locked';
+      const t = h(`<button class="free c-${u.color} ${locked ? 'locked' : ''}" ${locked ? 'disabled' : ''}><span class="f-ic">${locked ? I.lock(20) : I.mic(22)}</span><b>${esc(n.title)}</b><span>${esc(n.partner)}</span></button>`);
+      if (!locked) t.addEventListener('click', () => go(`#/talk/${n.id}`));
+      grid.append(t);
+    }
+  }
+  $app.append(grid);
+}
+
+// ─── Progress tab ────────────────────────────────────────────
+async function renderProgress() {
+  state.welcome = false;
+  const me = await loadMe();
+  const s = me.stats;
+  $app.innerHTML = '';
+  $app.append(statsBar());
+  $app.append(h(`<h1>Progress</h1>`));
+  const L = me.level;
+  $app.append(
+    h(`<a class="level-card" href="#/badges"><span class="lv-badge">${L.level}</span><span class="lv-txt"><b>${esc(L.name)}</b><span class="ml" style="font-size:13px;opacity:.85">${esc(L.ml)}</span><span class="lv-bar"><i style="width:${Math.round(L.progress * 100)}%"></i></span><span class="lv-sub">${L.next ? `${L.next - L.xp} XP to level ${L.level + 1}` : 'Top level!'} · see badges</span></span></a>`),
+  );
+  const week = s.week
+    .map((d, i) => `<div class="d ${i === s.week.length - 1 ? 'today' : ''}"><div class="bar ${d.practiced ? 'on' : ''}"></div>${new Date(d.day + 'T12:00:00').toLocaleDateString('en-IN', { weekday: 'narrow' })}</div>`)
+    .join('');
+  $app.append(
+    h(`<div class="streak-card" style="margin-top:14px"><div class="streak-top"><span style="color:var(--gold)">${I.flame(34)}</span><span class="n">${s.streak}</span><span class="l">day streak</span><span class="side">${goalRing(s.secondsToday, me.user.dailyGoalMin || 5)}<span class="goal-l">today's goal</span></span></div><div class="week">${week}</div></div>`),
+  );
+  if (me.quests) $app.append(questCard(me.quests));
+  const ins = me.insights;
+  if (ins && ins.replies) {
+    $app.append(h(`<h2>Your speaking this week</h2>`));
+    $app.append(
+      h(`<div class="insights">
+        <div class="ins"><div class="v">${ins.wordsPerReply}</div><div class="l">words per reply</div>${trendLine(ins.wordsPerReply, ins.wordsPerReplyPrev, '')}<div class="hint">Longer answers = more confidence</div></div>
+        <div class="ins"><div class="v">${ins.cleanReplyRate}<small>%</small></div><div class="l">replies with no fix needed</div><div class="hint">${ins.replies} replies this week</div></div>
+        <div class="ins"><div class="v">${ins.lifelineWords}</div><div class="l">Malayalam words used</div>${trendLine(ins.lifelineWords, ins.lifelineWordsPrev, '', true)}<div class="hint">Fewer over time = growing vocabulary</div></div>
+        <div class="ins"><div class="v">${s.minutesSpoken}</div><div class="l">minutes spoken in total</div><div class="hint">${s.daysPracticed} days practised</div></div>
+      </div>`),
+    );
+  }
+  if (!me.user.isGuest) {
+    $app.append(
+      h(`<a class="big-card white" href="#/invite" style="margin-top:14px"><span class="bc-ic" style="background:var(--gold-soft);color:var(--gold-ink)">${I.gift()}</span><span><b>Practise with a friend</b><span>Invite someone — you both get free sessions</span></span><span class="go">${I.chev(22)}</span></a>`),
+    );
+  }
+}
+
+// ─── Lesson: one exchange at a time ──────────────────────────
 async function renderTalk(scenarioId) {
+  state.welcome = false;
   if (!state.me) await loadMe();
   $app.innerHTML = '';
-  const wrap = h(`<div class="talk"></div>`);
-  const head = h(`<div class="talk-head topbar">
-      <button class="round-btn" data-exit aria-label="Leave conversation">${I.close()}</button>
-      ${avatar()}
-      <div class="meta"><div class="title">…</div><div class="role">Base</div></div>
-      <button class="round-btn hf" data-hf aria-pressed="false" aria-label="Hands-free mode" title="Hands-free mode">${I.headset()}</button>
-      <button class="pill" data-finish style="display:none">Finish</button>
-    </div>`);
-  const progress = h(`<div class="segments"></div>`);
-  const thread = h(`<div class="thread"></div>`);
-  wrap.append(head, progress, thread);
-  $app.append(wrap);
-  const headAvatar = head.querySelector('.avatar');
-
-  const dock = h(`<div class="dock"><div class="dock-inner">
-      <div class="hint" aria-live="polite">Getting ready…</div>
-      <div class="dock-row">
-        <div class="dock-side" data-left><button class="side-btn" data-type aria-label="Type instead">${I.keyboard()}</button></div>
-        <div class="mic-halo"><button class="mic" disabled aria-label="Tap to speak">${MIC_SVG}<span class="ring"></span></button></div>
-        <div class="dock-side" data-right></div>
+  const L = h(`<div class="lesson">
+    <header class="l-head">
+      <button class="l-x" data-exit aria-label="Leave lesson">${I.close(22)}</button>
+      <div class="l-bar" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><i style="width:4%"></i></div>
+      <span class="l-combo" hidden></span>
+      <button class="l-hf" data-hf aria-pressed="false" aria-label="Hands-free mode" title="Hands-free mode">${I.headset(20)}</button>
+    </header>
+    <div class="l-body">
+      <div class="l-role"></div>
+      <div class="l-scene">
+        ${mascot('lg')}
+        <div class="l-bubble"><button class="l-say" aria-label="Hear it again">${I.speaker(22)}</button><span class="l-text"><span class="dots"><span></span><span></span><span></span></span></span></div>
       </div>
-      <div class="sub">വാക്ക് കിട്ടുന്നില്ലേ? മലയാളത്തിൽ പറഞ്ഞോളൂ</div>
-      <div data-typeslot style="width:100%"></div>
-    </div></div>`);
-  document.body.append(dock);
-  const hint = dock.querySelector('.hint');
-  const sub = dock.querySelector('.sub');
-  const micBtn = dock.querySelector('.mic');
-  const right = dock.querySelector('[data-right]');
-  const left = dock.querySelector('[data-left]');
-  const leftDefault = left.innerHTML;
-  const typeSlot = dock.querySelector('[data-typeslot]');
+      <div class="l-answer" hidden></div>
+    </div>
+    <footer class="l-foot">
+      <div class="l-hint" aria-live="polite">Getting ready…</div>
+      <div class="l-microw"><span class="l-side" data-left></span><button class="l-mic" disabled aria-label="Tap to speak">${MIC_SVG}<span class="ring"></span></button><span class="l-side" data-right></span></div>
+      <button class="linkish" data-type>Can't talk right now? Type instead</button>
+      <div data-typeslot></div>
+    </footer>
+  </div>`);
+  $app.append(L);
+  const bar = L.querySelector('.l-bar');
+  const comboEl = L.querySelector('.l-combo');
+  const roleEl = L.querySelector('.l-role');
+  const masc = L.querySelector('.mascot');
+  const textEl = L.querySelector('.l-text');
+  const answer = L.querySelector('.l-answer');
+  const hint = L.querySelector('.l-hint');
+  const micBtn = L.querySelector('.l-mic');
+  const left = L.querySelector('[data-left]');
+  const right = L.querySelector('[data-right]');
+  const typeSlot = L.querySelector('[data-typeslot]');
+  const foot = L.querySelector('.l-foot');
+
+  let session;
+  let partnerText = '';
+  let turn = 0;
+  let combo = 0;
+  let fixes = 0;
+  let sheet = null;
+  let busy = false;
+  let handsFree = prefs.get('handsFree', false);
+  let micRef = null;
+  const sessionXp = { n: 0 };
   state.cleanup = () => {
-    dock.remove();
+    sheet?.remove();
     recorder.release();
   };
 
-  const scrollDown = () => requestAnimationFrame(() => window.scrollTo({ top: document.body.scrollHeight, behavior: 'smooth' }));
-  const setHint = (text, cls = '') => {
-    hint.textContent = text;
-    hint.className = 'hint ' + cls;
+  const setBar = (n, max) => {
+    const pct = Math.max(4, Math.round((n / max) * 100));
+    bar.firstElementChild.style.width = pct + '%';
+    bar.setAttribute('aria-valuenow', String(pct));
   };
-  const setProgress = (n, max) => {
-    progress.innerHTML = Array.from({ length: max }, (_, i) => `<i class="${i < n ? 'on' : ''}"></i>`).join('');
+  const setMood = (m) => {
+    masc.classList.remove('talking', 'think', 'cheer', 'oops');
+    if (m) masc.classList.add(m);
   };
-
-  // Conversation state
-  let mode = 'reply'; // reply | retry | done
-  let turn = 0;
-  let pending = null; // turn result waiting for retry to complete
-  let retryTarget = null;
-  let attempts = 0;
-  let fixCard = null;
-  let micRef = null;
-  let combo = 0;
-  const comboChip = h(`<div class="combo" aria-live="polite" hidden></div>`);
-  progress.after(comboChip);
-  const bumpCombo = (win) => {
-    combo = win ? combo + 1 : 0;
-    if (combo >= 2) {
-      comboChip.hidden = false;
-      comboChip.innerHTML = `${I.flame(16)} <b>${combo}</b> in a row${combo >= 5 ? ' — unstoppable!' : combo >= 3 ? ' — on fire!' : ''}`;
-      comboChip.classList.remove('pop');
-      void comboChip.offsetWidth;
-      comboChip.classList.add('pop');
-    } else comboChip.hidden = true;
-  };
-  let handsFree = prefs.get('handsFree', false);
-  const hfBtn = head.querySelector('[data-hf]');
+  const hfBtn = L.querySelector('[data-hf]');
   const paintHf = () => {
     hfBtn.classList.toggle('on', handsFree);
     hfBtn.setAttribute('aria-pressed', String(handsFree));
@@ -842,23 +939,45 @@ async function renderTalk(scenarioId) {
     prefs.set('handsFree', handsFree);
     paintHf();
     if (handsFree) track('handsfree_on');
-    toast(handsFree ? 'Hands-free on: I\'ll listen after I speak, and send when you pause.' : 'Hands-free off: tap the mic to talk.');
-    if (handsFree && !micBtn.disabled && mode !== 'done') micRef?.start();
+    toast(handsFree ? "Hands-free on: I'll listen after I speak and send when you pause." : 'Hands-free off: tap the mic to talk.');
+    if (handsFree && !busy && !sheet) micRef?.start();
   });
-  const autoListen = () => {
-    if (handsFree && mode !== 'done' && !micBtn.disabled) micRef?.start();
-  };
 
-  let session;
+  async function speak(text, opts) {
+    setMood('talking');
+    await say(text, opts);
+    setMood('');
+  }
+
+  function showPartner(text) {
+    partnerText = text;
+    textEl.textContent = text;
+    L.querySelector('.l-bubble').classList.remove('pop');
+    void textEl.offsetWidth;
+    L.querySelector('.l-bubble').classList.add('pop');
+    answer.hidden = true;
+    answer.innerHTML = '';
+    micBtn.disabled = false;
+    busy = false;
+    hint.textContent = turn === 0 ? 'Tap the mic and answer. Take your time.' : 'Your turn. Pauses are okay.';
+    speak(text).then(() => {
+      if (handsFree && !sheet && !busy) micRef?.start();
+    });
+  }
+  L.querySelector('.l-say').addEventListener('click', () => {
+    unlockAudio();
+    track('replay_partner', null, session?.id);
+    speak(partnerText);
+  });
+
+  // Start
   try {
     const r = await api('/sessions', { method: 'POST', body: { scenarioId } });
     session = r.session;
-    head.querySelector('.title').textContent = session.title;
-    head.querySelector('.role').textContent = `Base · ${session.partnerLabel || 'Partner'}`;
-    setProgress(0, session.maxTurns);
-    await addPartner(r.opener);
+    roleEl.innerHTML = `<b>${esc(session.title)}</b>Base plays: ${esc(session.partnerLabel || 'your partner')}`;
+    setBar(0, session.maxTurns);
+    showPartner(r.opener);
   } catch (e) {
-    dock.remove();
     if (e.status === 402) {
       if (e.data?.reason === 'login') {
         track('login_prompt_shown', { from: 'limit' });
@@ -870,63 +989,29 @@ async function renderTalk(scenarioId) {
     throw e;
   }
 
-  head.querySelector('[data-exit]').addEventListener('click', () => {
-    if (turn > 0 && !confirm('Leave this conversation? Your mistakes so far are saved.')) return;
+  L.querySelector('[data-exit]').addEventListener('click', () => {
+    if (turn > 0 && !confirm('Quit this lesson? Your mistakes so far are saved.')) return;
     if (turn > 0) finish();
     else go('#/');
   });
-  head.querySelector('[data-finish]').addEventListener('click', () => finish());
 
-  async function speakAs(text, opts) {
-    headAvatar.classList.add('talking');
-    await say(text, opts);
-    headAvatar.classList.remove('talking');
+  function resetSides() {
+    left.innerHTML = '';
+    right.innerHTML = '';
   }
-
-  async function addPartner(text, { play = true } = {}) {
-    const b = h(`<div class="bubble partner"><div class="txt">${esc(text)}</div><button class="replay">${I.play()}Replay</button></div>`);
-    b.querySelector('.replay').addEventListener('click', () => {
-      unlockAudio();
-      track('replay_partner', null, session.id);
-      speakAs(text);
-    });
-    thread.append(b);
-    scrollDown();
-    setReady();
-    if (play) speakAs(text).then(autoListen);
-  }
-
-  function setReady() {
-    micBtn.disabled = false;
-    micBtn.classList.toggle('retry', mode === 'retry');
-    if (mode === 'retry') {
-      setHint('Now say the sentence out loud', 'retry');
-      sub.textContent = 'ഒരു തവണ ഉറക്കെ പറഞ്ഞാൽ മതി — accent നോക്കില്ല';
-    } else {
-      setHint(turn === 0 ? 'Tap the mic and answer. Take your time.' : 'Your turn. Pauses are okay.');
-      sub.textContent = 'വാക്ക് കിട്ടുന്നില്ലേ? മലയാളത്തിൽ പറഞ്ഞോളൂ';
-    }
-  }
-
-  function thinking(on) {
-    micBtn.disabled = on;
-    if (on) {
-      thread.append(h(`<div class="bubble partner typing" data-typing><span class="dots"><span></span><span></span><span></span></span></div>`));
-      scrollDown();
-    } else thread.querySelector('[data-typing]')?.remove();
-  }
-
   const mic = micControl(micBtn, {
     autoStop: () => handsFree,
     onState(st, sec) {
       if (st === 'recording') {
-        setHint(mode === 'retry' ? 'Say it… tap stop when done' : 'Listening… pause as much as you need');
+        hint.textContent = 'Listening… pause as much as you need';
+        setMood('think');
         right.innerHTML = `<span class="timer">0:00</span>`;
         left.innerHTML = `<button class="linkish" data-cancel>Cancel</button>`;
         left.querySelector('[data-cancel]').addEventListener('click', () => {
           mic.cancel();
           resetSides();
-          setReady();
+          setMood('');
+          hint.textContent = 'Your turn. Pauses are okay.';
         });
       } else if (st === 'tick') {
         const t = right.querySelector('.timer');
@@ -936,209 +1021,236 @@ async function renderTalk(scenarioId) {
     onAudio(out) {
       sfx.send();
       buzz(15);
-      if (mode === 'retry') submitRetry(audioForm(out, { target: retryTarget, mistakeId: pending?.correction?.mistakeId, context: 'session', sessionId: session.id, attempt: attempts + 1 }));
-      else submitTurn(audioForm(out));
+      submitTurn(audioForm(out));
     },
   });
-
   micRef = mic;
 
-  function resetSides() {
-    right.innerHTML = '';
-    left.innerHTML = leftDefault;
-    left.querySelector('[data-type]')?.addEventListener('click', openTyping);
-  }
-  left.querySelector('[data-type]').addEventListener('click', openTyping);
-
-  // Typing fallback (no mic / testing / noisy bus)
-  function openTyping() {
-    if (typeSlot.querySelector('form')) return typeSlot.querySelector('input').focus();
-    const f = h(`<form class="type-form"><input placeholder="Type what you would say…" autocomplete="off" aria-label="Your reply" /><button class="btn">Send</button></form>`);
-    f.addEventListener('submit', (e) => {
-      e.preventDefault();
-      const v = f.querySelector('input').value.trim();
-      if (!v || micBtn.disabled) return;
-      f.querySelector('input').value = '';
-      const form = new FormData();
-      form.append('text', v);
-      if (mode === 'retry') {
-        form.append('target', retryTarget);
-        if (pending?.correction?.mistakeId) form.append('mistakeId', pending.correction.mistakeId);
-        form.append('context', 'session');
-        submitRetry(form);
-      } else submitTurn(form);
-    });
-    typeSlot.append(f);
-    f.querySelector('input').focus();
-  }
-  if (!Recorder.supported()) openTyping();
+  L.querySelector('[data-type]').addEventListener('click', () => openTyping(typeSlot, (v) => {
+    const f = new FormData();
+    f.append('text', v);
+    submitTurn(f);
+  }));
+  if (!Recorder.supported()) L.querySelector('[data-type]').click();
 
   async function submitTurn(form) {
-    // Optimistic UI: the learner's bubble appears instantly while we transcribe.
-    const mine = h(`<div class="bubble learner pending" aria-label="Sending your reply"><span class="wave"><i></i><i></i><i></i><i></i><i></i></span></div>`);
-    thread.append(mine);
-    scrollDown();
+    if (busy) return;
+    busy = true;
     micBtn.disabled = true;
-    setHint('Listening back…');
+    setMood('think');
+    answer.hidden = false;
+    answer.innerHTML = `<span class="wave"><i></i><i></i><i></i><i></i><i></i></span>`;
+    hint.textContent = 'Listening back…';
+    const slow = setTimeout(() => (hint.textContent = 'Base is thinking…'), 1300);
     let r;
-    const slow = setTimeout(() => {
-      setHint('Thinking…');
-      thinking(true);
-    }, 1200);
     try {
       r = await api(`/sessions/${session.id}/turn`, { method: 'POST', form });
     } catch (e) {
       clearTimeout(slow);
-      thinking(false);
-      mine.remove();
+      answer.hidden = true;
+      setMood('');
       toast(e.message);
-      setReady();
+      busy = false;
+      micBtn.disabled = false;
+      hint.textContent = 'Try once more — tap the mic.';
       return;
     }
     clearTimeout(slow);
-    thinking(false);
     turn = r.turn;
-    setProgress(turn, r.maxTurns);
-    head.querySelector('[data-finish]').style.display = turn >= 2 ? '' : 'none';
-
-    mine.classList.remove('pending');
-    mine.removeAttribute('aria-label');
-    mine.innerHTML = markMl(r.transcript);
-    if (!r.correction) bumpCombo(true);
-    handleRewards(r.rewards, mine);
+    setBar(turn, r.maxTurns);
+    answer.innerHTML = `<span class="a-k">You said</span>${markMl(r.transcript)}`;
+    if (r.rewards?.xp) sessionXp.n += r.rewards.xp;
+    handleRewards(r.rewards, answer);
     if (r.turn === 1 && !state.me?.stats?.sessionsDone) {
       setTimeout(() => {
         sfx.level();
         celebrate('Your first English reply!', 'തുടക്കം ഗംഭീരം!');
-      }, 400);
+      }, 300);
     }
-    for (const w of r.lifeline) {
-      thread.append(h(`<div class="word-card"><span class="ttl">NEW WORD</span><span class="from">${esc(w.said)}</span><span style="color:var(--gold-ink)">${I.arrow()}</span><span class="to">${esc(w.english)}</span></div>`));
-    }
-    scrollDown();
-
     if (r.correction) {
-      pending = r;
-      showFix(r.correction);
+      fixes++;
+      openFixSheet(r);
     } else {
-      if (r.praise) thread.append(h(`<div class="praise">${I.check(16)} ${esc(r.praise)}</div>`));
-      await continueAfter(r);
+      bumpCombo(true);
+      openGoodSheet(r);
     }
   }
 
-  function showFix(c) {
-    mode = 'retry';
-    attempts = 0;
-    retryTarget = c.sayItLikeThis;
-    fixCard = h(`<div class="fix-card">
-      <div class="kasavu wide"></div>
-      <div class="top"><span class="tag">${c.kind === 'word' ? 'Say it in English' : 'One small fix'}</span>
-        <span class="fb">Clear? <button data-fb="1" aria-label="Yes, clear">${I.thumb()}</button><button data-fb="0" aria-label="Not clear">${I.thumb(18, true)}</button></span></div>
-      ${c.kind !== 'word' ? `<div><div class="lbl">You said</div><div class="said">${esc(c.youSaid)}</div></div>` : ''}
-      <div><div class="lbl g">Say it like this</div><div class="right">${esc(c.sayItLikeThis)}</div></div>
-      <div class="why">${avatar('sm')}<span>${esc(c.explanationMl)}</span></div>
-      ${c.repeated ? `<div class="repeat">This one has come up ${c.timesMade} times — it's in your Mistake Bank.</div>` : ''}
-      <div class="actions"><button class="btn outline" data-listen>${I.speaker(18)}Hear it slowly</button></div>
-      <div data-result></div>
-    </div>`);
-    fixCard.querySelector('[data-listen]').addEventListener('click', () => {
+  function bumpCombo(win) {
+    combo = win ? combo + 1 : 0;
+    if (combo >= 2) {
+      comboEl.hidden = false;
+      comboEl.innerHTML = `${I.flame(16)}${combo}`;
+      comboEl.classList.remove('pop');
+      void comboEl.offsetWidth;
+      comboEl.classList.add('pop');
+      if (combo === 3 || combo === 5) toast(combo === 5 ? '5 in a row — unstoppable!' : '3 in a row — on fire!');
+    } else comboEl.hidden = true;
+  }
+
+  function wordsHtml(r) {
+    return r.lifeline?.length
+      ? `<div class="fb-words">${r.lifeline.map((w) => `<span class="word-chip"><span class="ml">${esc(w.said)}</span> → <b>${esc(w.english)}</b></span>`).join('')}</div>`
+      : '';
+  }
+
+  function makeSheet(cls, inner) {
+    sheet?.remove();
+    sheet = h(`<div class="fb-sheet ${cls}" role="dialog" aria-live="assertive">${inner}</div>`);
+    document.body.append(sheet);
+    foot.classList.add('covered');
+    return sheet;
+  }
+  function closeSheet() {
+    sheet?.remove();
+    sheet = null;
+    foot.classList.remove('covered');
+  }
+
+  function openGoodSheet(r) {
+    setMood('cheer');
+    sfx.success();
+    buzz(20);
+    const s = makeSheet(
+      'good',
+      `<div class="fb-top"><span class="fb-ic">${I.check(26)}</span><div><div class="fb-title">${esc(r.praise || 'Nice!')}</div><div class="fb-sub">Clear and natural. Keep going!</div></div></div>${wordsHtml(r)}<button class="b3d green block" data-next>Continue</button>`,
+    );
+    s.querySelector('[data-next]').addEventListener('click', () => next(r));
+    s.querySelector('[data-next]').focus();
+    if (handsFree) setTimeout(() => sheet === s && next(r), 1800);
+  }
+
+  function openFixSheet(r) {
+    const c = r.correction;
+    setMood('');
+    sfx.soft();
+    let attempts = 0;
+    const s = makeSheet(
+      'fix',
+      `<div class="fb-top"><span class="fb-ic">${I.bulb(24)}</span><div><div class="fb-title">${c.kind === 'word' ? 'Say it in English' : 'Almost! Say it like this'}</div>${c.kind !== 'word' ? `<div class="fb-sub"><s>${esc(c.youSaid)}</s></div>` : ''}</div>
+        <span class="fb"><button data-fb="1" aria-label="Explanation was clear">${I.thumb(16)}</button><button data-fb="0" aria-label="Not clear">${I.thumb(16, true)}</button></span></div>
+      ${wordsHtml(r)}
+      <div class="fb-right"><button class="fb-say" aria-label="Hear it slowly">${I.speaker(20)}</button><span>${esc(c.sayItLikeThis)}</span></div>
+      <div class="fb-why">${mascot('xs')}<span class="ml">${esc(c.explanationMl)}</span></div>
+      ${c.repeated ? `<div class="fb-repeat">This one has come up ${c.timesMade} times — it's in your Mistake Bank.</div>` : ''}
+      <div class="fb-result" aria-live="polite"></div>
+      <div class="fb-actions"><button class="b3d gold mic-btn block" data-retry>${I.mic(22)} <span>Say it out loud</span></button></div>
+      <div class="fb-links"><button class="linkish" data-typefix>Type it</button><span data-skipslot></span></div>
+      <div data-fixtype></div>`,
+    );
+    const result = s.querySelector('.fb-result');
+    const retryBtn = s.querySelector('[data-retry]');
+    s.querySelector('.fb-say').addEventListener('click', () => {
       track('replay_correction', null, session.id);
-      speakAs(c.sayItLikeThis, { slow: true });
+      speak(c.sayItLikeThis, { slow: true });
     });
-    fixCard.querySelectorAll('[data-fb]').forEach((b) =>
+    s.querySelectorAll('[data-fb]').forEach((b) =>
       b.addEventListener('click', () => {
-        fixCard.querySelectorAll('[data-fb]').forEach((x) => x.classList.remove('on'));
+        s.querySelectorAll('[data-fb]').forEach((x) => x.classList.remove('on'));
         b.classList.add('on');
         track('correction_feedback', { helpful: b.dataset.fb === '1', mistakeId: c.mistakeId }, session.id);
-        toast(b.dataset.fb === '1' ? 'Thanks!' : 'Thanks — we will make these clearer.');
       }),
     );
-    thread.append(fixCard);
-    scrollDown();
-    setReady();
-    speakAs(c.sayItLikeThis, { slow: true }).then(autoListen);
-  }
+    speak(c.sayItLikeThis, { slow: true }).then(() => {
+      if (handsFree && sheet === s) retryMic.start();
+    });
 
-  async function submitRetry(form) {
-    micBtn.disabled = true;
-    setHint('Checking…');
-    const result = fixCard.querySelector('[data-result]');
-    let r;
-    try {
-      r = await api('/retry', { method: 'POST', form });
-    } catch (e) {
-      toast(e.message);
-      setReady();
-      return;
-    }
-    attempts++;
-    if (r.pass) {
-      sfx.success();
-      buzz([20, 30, 40]);
-      bumpCombo(attempts === 1);
-      handleRewards(r.rewards, result);
-      fixCard.classList.add('passed');
-      result.innerHTML = `<div class="retry-result ok">${I.check(18)} You said it! <span class="heard">“${esc(r.transcript)}”</span></div>`;
-      celebrate(r.mastery?.justMastered ? 'Mistake mastered!' : 'Perfect!');
-      mode = 'reply';
-      scrollDown();
-      await sleep(1100);
-      const p = pending;
-      pending = null;
-      await continueAfter(p);
-    } else {
-      sfx.soft();
-      bumpCombo(false);
-      const missing = r.missing?.length ? ` Listen for: <span class="missing">${r.missing.map(esc).join(', ')}</span>` : '';
-      result.innerHTML = `<div class="retry-result no shake">Almost! Try once more.${missing}<span class="heard">We heard: “${esc(r.transcript)}”</span></div>`;
-      if (attempts >= 2 && !fixCard.querySelector('[data-skip]')) {
-        const skip = h(`<button class="linkish" data-skip>Move on for now — it's saved in your Mistake Bank</button>`);
-        skip.addEventListener('click', async () => {
-          track('retry_skipped', { attempts }, session.id);
-          skip.remove();
-          mode = 'reply';
-          const p = pending;
-          pending = null;
-          await continueAfter(p);
-        });
-        result.append(skip);
+    async function check(form) {
+      retryBtn.disabled = true;
+      result.innerHTML = `<span class="small">Checking…</span>`;
+      let rr;
+      try {
+        rr = await api('/retry', { method: 'POST', form });
+      } catch (e) {
+        result.innerHTML = '';
+        toast(e.message);
+        retryBtn.disabled = false;
+        return;
       }
-      scrollDown();
-      setReady();
+      attempts++;
+      if (rr.pass) {
+        bumpCombo(attempts === 1);
+        if (rr.rewards?.xp) sessionXp.n += rr.rewards.xp;
+        handleRewards(rr.rewards, retryBtn);
+        sfx.success();
+        buzz([20, 30, 40]);
+        celebrate(rr.mastery?.justMastered ? 'Mistake mastered!' : 'Perfect!');
+        setMood('cheer');
+        s.className = 'fb-sheet good';
+        s.querySelector('.fb-title').textContent = 'You said it!';
+        s.querySelector('.fb-ic').innerHTML = I.check(26);
+        result.innerHTML = `<div class="small">“${esc(rr.transcript)}”</div>`;
+        s.querySelector('.fb-actions').innerHTML = `<button class="b3d green block" data-next>Continue</button>`;
+        s.querySelector('.fb-links').remove();
+        s.querySelector('[data-fixtype]').remove();
+        s.querySelector('[data-next]').addEventListener('click', () => next(r));
+        s.querySelector('[data-next]').focus();
+        if (handsFree) setTimeout(() => sheet === s && next(r), 1800);
+      } else {
+        bumpCombo(false);
+        sfx.soft();
+        setMood('oops');
+        const missing = rr.missing?.length ? ` Listen for: <b>${rr.missing.map(esc).join(', ')}</b>` : '';
+        result.innerHTML = `<div class="fb-no shake">Almost! Try once more.${missing}<span>We heard: “${esc(rr.transcript)}”</span></div>`;
+        retryBtn.disabled = false;
+        if (attempts >= 2 && !s.querySelector('[data-skip]')) {
+          const sk = h(`<button class="linkish" data-skip>Skip for now</button>`);
+          sk.addEventListener('click', () => {
+            track('retry_skipped', { attempts }, session.id);
+            next(r);
+          });
+          s.querySelector('[data-skipslot]').append(sk);
+        }
+      }
     }
+    const retryMic = micControl(retryBtn, {
+      icon: `${I.mic(22)} <span>Say it out loud</span>`,
+      stopIcon: `<span class="stopsq sm"></span> <span>Tap when done</span>`,
+      autoStop: () => handsFree,
+      onAudio(out) {
+        sfx.send();
+        check(audioForm(out, { target: c.sayItLikeThis, mistakeId: c.mistakeId, context: 'session', sessionId: session.id, attempt: attempts + 1 }));
+      },
+    });
+    s.querySelector('[data-typefix]').addEventListener('click', () =>
+      openTyping(s.querySelector('[data-fixtype]'), (v) => {
+        const f = new FormData();
+        f.append('text', v);
+        f.append('target', c.sayItLikeThis);
+        f.append('mistakeId', c.mistakeId);
+        f.append('context', 'session');
+        check(f);
+      }),
+    );
   }
 
-  async function continueAfter(r) {
-    if (r.done) {
-      mode = 'done';
-      thread.append(h(`<div class="bubble partner"><div class="txt">${esc(r.reply)}</div></div>`));
-      micBtn.disabled = true;
-      setHint('Great job!');
-      sub.textContent = '';
-      typeSlot.innerHTML = '';
-      const btn = h(`<button class="btn block gold">See what you learned ${I.arrow()}</button>`);
-      typeSlot.append(btn);
-      btn.addEventListener('click', finish);
-      scrollDown();
-      speakAs(r.reply);
-      return;
-    }
-    await addPartner(r.reply);
+  function next(r) {
+    closeSheet();
+    sfx.tap();
+    if (r.done) return finish(r.reply);
+    showPartner(r.reply);
   }
 
   let finishing = false;
-  async function finish() {
+  async function finish(closing) {
     if (finishing) return;
     finishing = true;
     mic.cancel();
+    closeSheet();
+    if (closing) {
+      textEl.textContent = closing;
+      setMood('cheer');
+      micBtn.disabled = true;
+      hint.textContent = '';
+      await speak(closing).catch(() => {});
+    }
     stopSpeaking();
-    dock.remove();
     $app.innerHTML = '';
-    $app.append(emptyState(I.sparkle(), 'One moment…', 'Putting together what you learned.'));
+    $app.append(h(`<div class="lesson-wait">${mascot('lg', 'cheer')}<p>Counting your wins…</p></div>`));
     try {
       const r = await api(`/sessions/${session.id}/end`, { method: 'POST' });
       await loadMe();
-      renderSummary(r, scenarioId);
+      renderComplete(r, scenarioId, { fixes, turns: turn });
     } catch (e) {
       toast(e.message);
       go('#/');
@@ -1146,130 +1258,153 @@ async function renderTalk(scenarioId) {
   }
 }
 
-function renderSummary(r, scenarioId) {
-  $app.innerHTML = '';
-  const sec = Math.round(r.secondsSpoken);
-  const big = sec >= 60 ? `${Math.floor(sec / 60)}:${String(sec % 60).padStart(2, '0')}<small>min</small>` : `${sec}<small>sec</small>`;
+function openTyping(slot, onSend) {
+  if (slot.querySelector('form')) return slot.querySelector('input').focus();
+  const f = h(`<form class="type-form"><input placeholder="Type what you would say…" autocomplete="off" aria-label="Your reply" /><button class="b3d green">Send</button></form>`);
+  f.addEventListener('submit', (e) => {
+    e.preventDefault();
+    const v = f.querySelector('input').value.trim();
+    if (!v) return;
+    f.querySelector('input').value = '';
+    onSend(v);
+  });
+  slot.append(f);
+  f.querySelector('input').focus();
+}
+
+// ─── Lesson complete: a short sequence of reward screens ─────
+function renderComplete(r, scenarioId, { fixes, turns }) {
   const seen = new Set();
   const words = r.words.filter((w) => !seen.has(w.english.toLowerCase()) && seen.add(w.english.toLowerCase()));
-  const hero = h(`<section class="sum-hero">
-      <div class="topbar" style="background:none;padding:0;position:static">
-        <a class="brand" href="#/" style="color:var(--cream)"><span class="wordmark">base<i>.</i></span></a><span class="spacer"></span>
-        <span class="pill gold">${I.flame()} ${r.stats.streak} day${r.stats.streak === 1 ? '' : 's'}</span>
-      </div>
-      <div class="eyebrow">YOU SPOKE ENGLISH OUT LOUD FOR</div>
-      <div class="big">${big}</div>
-      <div class="nums"><span><b>${r.turns}</b> replies</span><span><b>${r.mistakes.length}</b> fix${r.mistakes.length === 1 ? '' : 'es'}</span><span><b>${words.length}</b> new word${words.length === 1 ? '' : 's'}</span></div>
-    </section>`);
-  $app.append(hero);
+  const sec = Math.round(r.secondsSpoken);
+  const clean = turns ? Math.round(((turns - fixes) / turns) * 100) : 0;
+  const steps = [];
 
-  // ── Reward reel: XP counts up, level bar fills, then goal / milestone / badges pop in ──
-  if (r.xp || r.level) {
+  // 1) Lesson complete + stat tiles + level bar
+  steps.push(() => {
     const lb = r.levelBefore || r.level;
     const up = r.level && lb && r.level.level > lb.level;
-    const reel = h(`<div class="reel">
-      <div class="xp-total"><span class="plus">+</span><span data-xp>0</span><small>XP</small></div>
-      <div class="lvl-line"><span class="lv-badge" data-lv>${lb.level}</span><span class="lv-txt"><b data-lvname>${esc(lb.name)}</b><span class="lv-bar"><i data-bar style="width:${Math.round(lb.progress * 100)}%"></i></span></span></div>
+    const el = h(`<section class="done-screen">
+      <div class="burst">${mascot('xl', 'cheer')}</div>
+      <h1 class="center">Lesson complete!</h1>
+      <p class="center ml done-sub">${esc(r.coachNote || 'നന്നായി സംസാരിച്ചു!')}</p>
+      <div class="tiles">
+        <div class="tile3 gold"><div class="t-k">TOTAL XP</div><div class="t-v">${I.bolt(20)}<span data-c="${r.xp || 0}">0</span></div></div>
+        <div class="tile3 green"><div class="t-k">SPOKE FOR</div><div class="t-v">${I.mic(18)}<span>${sec >= 60 ? `${Math.floor(sec / 60)}:${String(sec % 60).padStart(2, '0')}` : `${sec}s`}</span></div></div>
+        <div class="tile3 blue"><div class="t-k">NO-FIX REPLIES</div><div class="t-v">${I.target(18)}<span data-c="${clean}">0</span>%</div></div>
+      </div>
+      ${r.level ? `<div class="lvl-line"><span class="lv-badge" data-lv>${lb.level}</span><span class="lv-txt"><b data-lvname>${esc(lb.name)}</b><span class="lv-bar light"><i data-bar style="width:${Math.round(lb.progress * 100)}%"></i></span></span></div>` : ''}
       <div class="chips" data-chips></div>
-    </div>`);
-    $app.append(reel);
-    const chips = reel.querySelector('[data-chips]');
-    const addChip = (html, delay, cls = '') =>
+    </section>`);
+    setTimeout(() => {
+      el.querySelectorAll('[data-c]').forEach((x) => countUp(x, Number(x.dataset.c)));
+      sfx.success();
+    }, 300);
+    if (r.level) {
+      setTimeout(() => {
+        const bar = el.querySelector('[data-bar]');
+        if (!bar) return;
+        if (up) {
+          bar.style.width = '100%';
+          setTimeout(() => {
+            el.querySelector('[data-lv]').textContent = r.level.level;
+            el.querySelector('[data-lv]').classList.add('bump');
+            el.querySelector('[data-lvname]').textContent = r.level.name;
+            bar.style.transition = 'none';
+            bar.style.width = '0%';
+            void bar.offsetWidth;
+            bar.style.transition = '';
+            bar.style.width = `${Math.round(r.level.progress * 100)}%`;
+            sfx.level();
+            celebrate(`Level ${r.level.level}!`, r.level.ml);
+          }, 750);
+        } else bar.style.width = `${Math.round(r.level.progress * 100)}%`;
+      }, 1100);
+    }
+    const chips = el.querySelector('[data-chips]');
+    let d = 1700;
+    const chip = (html, cls) =>
       setTimeout(() => {
         chips.append(h(`<span class="rw-chip ${cls}">${html}</span>`));
         sfx.xp();
-        buzz(12);
-      }, delay);
-    setTimeout(() => {
-      countUp(reel.querySelector('[data-xp]'), r.xp || 0);
-      sfx.success();
-    }, 350);
-    setTimeout(() => {
-      const bar = reel.querySelector('[data-bar]');
-      if (up) {
-        bar.style.width = '100%';
-        setTimeout(() => {
-          reel.querySelector('[data-lv]').textContent = r.level.level;
-          reel.querySelector('[data-lvname]').textContent = r.level.name;
-          reel.querySelector('[data-lv]').classList.add('bump');
-          bar.style.transition = 'none';
-          bar.style.width = '0%';
-          void bar.offsetWidth;
-          bar.style.transition = '';
-          bar.style.width = `${Math.round(r.level.progress * 100)}%`;
-          sfx.level();
-          buzz([30, 40, 60]);
-          celebrate(`Level ${r.level.level}!`, r.level.ml);
-        }, 750);
-      } else bar.style.width = `${Math.round(r.level.progress * 100)}%`;
-    }, 1200);
-    let d = 1900 + (up ? 1200 : 0);
-    if (r.goalMet) addChip(`${I.target(16)} Daily goal done`, (d += 350), 'gold');
-    if (r.milestone) addChip(`${I.flame(16)} ${r.milestone}-day streak!`, (d += 350), 'gold');
-    for (const b of r.newBadges || []) addChip(`${I.star(16)} ${esc(b.name)}`, (d += 350), 'star');
-  }
+      }, (d += 350));
+    if (r.goalMet) chip(`${I.target(16)} Daily goal done`, 'gold');
+    if (r.milestone) chip(`${I.flame(16)} ${r.milestone}-day streak!`, 'gold');
+    for (const b of r.newBadges || []) chip(`${I.star(16)} ${esc(b.name)}`, 'star');
+    for (const w of words.slice(0, 3)) chip(`<span class="ml">${esc(w.said)}</span> → ${esc(w.english)}`, '');
+    return el;
+  });
 
-  if (r.coachNote) $app.append(h(`<p class="coach-note">${esc(r.coachNote)}</p>`));
-
-  if (r.mistakes.length || words.length) {
-    const card = h(`<div class="card" style="margin-top:16px"><div class="display" style="font-weight:700;font-size:16px;margin-bottom:4px">Today's fixes</div></div>`);
-    for (const m of r.mistakes) {
-      card.append(h(`<div class="fix-line"><span class="tick" style="color:var(--cream)">${I.check()}</span><div><div class="r">${esc(m.corrected)}</div><div class="w">${esc(m.explanationMl)}</div></div></div>`));
-    }
-    if (words.length) {
-      card.append(
-        h(`<div style="display:flex;gap:8px;flex-wrap:wrap;border-top:1px dashed var(--line);padding-top:12px;margin-top:6px">${words
-          .map((w) => `<span class="word-chip">${esc(w.said)} → <b>${esc(w.english)}</b></span>`)
-          .join('')}</div>`),
-      );
-    }
-    $app.append(card);
-  } else if (r.turns) {
-    $app.append(h(`<div class="card center" style="margin-top:16px"><b>No corrections needed</b> — very natural English!</div>`));
-  }
-
-  if (r.needLogin) {
-    track('login_prompt_shown', { from: 'summary' });
-    const card = h(`<div class="card dark save-card">
-      <div class="kasavu"></div>
-      <h3>Keep your Mistake Bank &amp; streak</h3>
-      <p>One-tap login with your phone or WhatsApp. Unlocks your free practice sessions.</p>
-      <button class="btn block gold" data-login>Continue with WhatsApp ${I.arrow()}</button>
-      <button class="btn ghost block" data-skip style="color:#b9c8c3">Maybe later</button>
-    </div>`);
-    card.querySelector('[data-login]').addEventListener('click', () => {
-      sessionStorage.setItem('afterLogin', '#/bank');
-      go('#/login');
+  // 2) Streak screen (first lesson of the day)
+  if (r.firstToday && r.stats.streak > 0) {
+    steps.push(() => {
+      const week = r.stats.week
+        .map((d, i) => `<div class="sd ${d.practiced ? 'on' : ''} ${i === r.stats.week.length - 1 ? 'today' : ''}"><span>${d.practiced ? I.check(14) : ''}</span>${new Date(d.day + 'T12:00:00').toLocaleDateString('en-IN', { weekday: 'narrow' })}</div>`)
+        .join('');
+      const el = h(`<section class="done-screen streak-screen">
+        <div class="big-flame">${I.flame(120)}<span class="bf-n">${r.stats.streak}</span></div>
+        <h1 class="center">${r.stats.streak === 1 ? 'You started a streak!' : `${r.stats.streak}-day streak!`}</h1>
+        <p class="center done-sub">${r.stats.streak === 1 ? 'Come back tomorrow to make it 2.' : 'You showed up again. That is how speaking gets easy.'}</p>
+        <div class="streak-week">${week}</div>
+      </section>`);
+      setTimeout(() => {
+        sfx.level();
+        buzz([30, 40, 60]);
+      }, 200);
+      return el;
     });
-    card.querySelector('[data-skip]').addEventListener('click', () => {
-      track('login_skipped');
-      card.remove();
-    });
-    $app.append(card);
   }
-  // Tomorrow hook + commitment ("remind me") — the open loop that brings people back.
-  if (r.nextHook && !r.needLogin) {
+
+  // 3) Save progress (guest) or tomorrow hook
+  steps.push(() => {
+    if (r.needLogin) {
+      track('login_prompt_shown', { from: 'summary' });
+      const el = h(`<section class="done-screen">
+        <div class="burst">${mascot('xl', 'look')}</div>
+        <h1 class="center">Don't lose your progress</h1>
+        <p class="center done-sub">Save your ${r.mistakes.length} personal fix${r.mistakes.length === 1 ? '' : 'es'}, your XP and your streak — and unlock more free lessons.</p>
+        <div class="fix-list">${r.mistakes.map((m) => `<div class="fix-line"><span class="tick">${I.check()}</span><div><div class="r">${esc(m.corrected)}</div></div></div>`).join('')}</div>
+      </section>`);
+      el._primary = { label: 'Save with my phone number', run: () => (sessionStorage.setItem('afterLogin', '#/'), go('#/login')) };
+      el._secondary = { label: 'Maybe later', run: () => (track('login_skipped'), go('#/')) };
+      return el;
+    }
     const remindOn = state.me?.user?.reminders;
-    const hook = h(`<div class="hook">${avatar()}<div><div class="hook-k">TOMORROW</div><div class="hook-t">${esc(r.nextHook)}</div>
-      ${remindOn ? `<div class="small" style="margin-top:6px">${I.bell(14)} I'll message you if you forget.</div>` : `<button class="btn outline" data-remind style="margin-top:10px">${I.bell(16)} Remind me on WhatsApp</button>`}</div></div>`);
-    hook.querySelector('[data-remind]')?.addEventListener('click', async (e) => {
+    const el = h(`<section class="done-screen">
+      <div class="burst">${mascot('xl', 'wave')}</div>
+      ${r.nextHook ? `<div class="hook-big"><div class="hook-k">TOMORROW</div><div class="hook-t">${esc(r.nextHook)}</div></div>` : `<h1 class="center">See you tomorrow!</h1>`}
+      ${remindOn ? `<p class="center small">${I.bell(14)} I'll message you on WhatsApp if you forget.</p>` : `<button class="b3d white block" data-remind>${I.bell(18)} Remind me on WhatsApp</button>`}
+      ${r.quests ? '<div data-q></div>' : ''}
+    </section>`);
+    if (r.quests) el.querySelector('[data-q]').append(questCard(r.quests));
+    el.querySelector('[data-remind]')?.addEventListener('click', async (e) => {
       await api('/settings', { method: 'POST', body: { reminders: true } }).catch(() => {});
-      e.target.closest('button').outerHTML = `<div class="small" style="margin-top:6px">${I.check(14)} Done — I'll message you if you forget.</div>`;
+      e.currentTarget.outerHTML = `<p class="center small">${I.check(14)} Done — I'll message you if you forget.</p>`;
       sfx.tap();
     });
-    $app.append(hook);
-  }
-  if (r.quests && !r.needLogin) $app.append(questCard(r.quests));
+    el._secondary = { label: 'Share my progress', run: () => shareProgress(r, words) };
+    return el;
+  });
 
-  const actions = h(`<div class="stack" style="margin-top:20px">
-    ${r.turns ? `<button class="btn block outline" data-share style="min-height:52px;border-radius:16px">${I.share()} Share my progress</button>` : ''}
-    <button class="btn block" data-again>Practise again</button>
-    <button class="btn block secondary" data-home>Back to home</button>
-  </div>`);
-  actions.querySelector('[data-again]').addEventListener('click', () => go(`#/talk/${scenarioId}`));
-  actions.querySelector('[data-share]')?.addEventListener('click', () => shareProgress(r, words));
-  actions.querySelector('[data-home]').addEventListener('click', () => go('#/'));
-  $app.append(actions);
+  let i = 0;
+  const show = () => {
+    $app.innerHTML = '';
+    const screen = steps[i]();
+    const foot = h(`<div class="done-foot"><button class="b3d green block" data-go>${esc(screen._primary?.label || (i < steps.length - 1 ? 'Continue' : 'Continue'))}</button>${screen._secondary ? `<button class="linkish" data-sec>${esc(screen._secondary.label)}</button>` : ''}</div>`);
+    foot.querySelector('[data-go]').addEventListener('click', () => {
+      sfx.tap();
+      if (screen._primary) return screen._primary.run();
+      i++;
+      if (i < steps.length) show();
+      else go('#/');
+    });
+    foot.querySelector('[data-sec]')?.addEventListener('click', () => screen._secondary.run());
+    $app.append(screen, foot);
+    $app.classList.remove('enter');
+    void $app.offsetWidth;
+    $app.classList.add('enter');
+  };
+  show();
 }
 
 // ─── Mistake bank ────────────────────────────────────────────
@@ -1358,11 +1493,18 @@ function bankCard(m) {
 }
 
 // ─── Warm-up drill ───────────────────────────────────────────
-async function renderWarmup() {
+async function renderWarmup(node) {
   const { items } = await api('/warmup');
   if (!state.me) await loadMe();
   $app.innerHTML = '';
   $app.append(topbar({ back: true }));
+  if (!items.length && node) {
+    // Nothing to review yet (no mistakes!) — the review step counts as done.
+    const r = await api(`/path/${node}/complete`, { method: 'POST' }).catch(() => null);
+    $app.append(emptyState(I.trophy(), 'No mistakes to fix!', 'Your answers have been clean so far — this review is done.', `<a class="b3d green" href="#/">Continue</a>`));
+    if (r) sfx.success();
+    return;
+  }
   if (!items.length) {
     $app.append(emptyState(I.sprout(), 'Nothing to warm up yet', 'Have a conversation first!', `<a class="btn" href="#/">Start speaking</a>`));
     return;
@@ -1433,7 +1575,7 @@ async function renderWarmup() {
   };
 
   const finishWarmup = async () => {
-    const r = await api('/warmup/done', { method: 'POST', body: { passed, total: items.length } }).catch(() => null);
+    const r = await api('/warmup/done', { method: 'POST', body: { passed, total: items.length, node } }).catch(() => null);
     if (r) {
       state.me.stats = r.stats;
       handleRewards(r.rewards);
@@ -1628,11 +1770,12 @@ function profileForm(u, title, sub, cta) {
 async function renderSettings() {
   await loadMe();
   if (state.me.user.isGuest) return go('#/login');
+  state.welcome = false;
   $app.innerHTML = '';
-  $app.append(topbar({ back: true }));
+  $app.append(statsBar());
   const u = state.me.user;
   const a = state.me.allowance;
-  $app.append(h(`<h1>Settings</h1>`));
+  $app.append(h(`<h1>Profile</h1>`));
 
   const plan = h(`<div class="card dark"><div class="kasavu"></div><div class="display" style="font-weight:700;font-size:18px;margin-top:10px">Your plan</div><p style="margin:4px 0 12px;color:#b9c8c3;font-size:14px">${
     a.plan === 'paid' ? 'Monthly pass — active' : a.canStart ? `Free trial · ${a.remaining} session${a.remaining === 1 ? '' : 's'} left` : 'Free trial finished'
