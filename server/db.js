@@ -132,6 +132,13 @@ CREATE TABLE IF NOT EXISTS xp_log (
   created_at TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_xp_user_day ON xp_log(user_id, day);
+CREATE TABLE IF NOT EXISTS path_progress (
+  user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  node_id TEXT NOT NULL,
+  runs INTEGER NOT NULL DEFAULT 0,
+  completed_at TEXT NOT NULL,
+  PRIMARY KEY (user_id, node_id)
+);
 `);
 
 export const now = () => new Date().toISOString();
@@ -232,6 +239,12 @@ export function mergeUsers(fromId, intoId) {
       intoId,
     );
     db.prepare('UPDATE nudges SET user_id = ? WHERE user_id = ?').run(intoId, fromId);
+    for (const p of db.prepare('SELECT * FROM path_progress WHERE user_id = ?').all(fromId)) {
+      db.prepare(
+        'INSERT INTO path_progress (user_id, node_id, runs, completed_at) VALUES (?, ?, ?, ?) ON CONFLICT(user_id, node_id) DO UPDATE SET runs = runs + excluded.runs',
+      ).run(intoId, p.node_id, p.runs, p.completed_at);
+    }
+    db.prepare('DELETE FROM path_progress WHERE user_id = ?').run(fromId);
     if (from && into) {
       const facts = [...safeJson(into.facts, []), ...safeJson(from.facts, [])].slice(-12);
       db.prepare('UPDATE users SET facts = ? WHERE id = ?').run(JSON.stringify(facts), intoId);
@@ -690,4 +703,16 @@ export function markBadgesSeen(userId, ids) {
 
 export function setNextHook(userId, hook) {
   db.prepare('UPDATE users SET next_hook = ? WHERE id = ?').run(hook ? String(hook).slice(0, 200) : null, userId);
+}
+
+// ─── Learning path progress ──────────────────────────────────
+export function completeNode(userId, nodeId) {
+  db.prepare(
+    `INSERT INTO path_progress (user_id, node_id, runs, completed_at) VALUES (?, ?, 1, ?)
+     ON CONFLICT(user_id, node_id) DO UPDATE SET runs = runs + 1`,
+  ).run(userId, nodeId, now());
+}
+
+export function nodeRuns(userId) {
+  return Object.fromEntries(db.prepare('SELECT node_id, runs FROM path_progress WHERE user_id = ?').all(userId).map((r) => [r.node_id, r.runs]));
 }

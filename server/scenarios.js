@@ -109,3 +109,36 @@ export function publicScenarios() {
     scenarios: scenarios.map(({ id, category, title, subtitle, partnerLabel }) => ({ id, category, title, subtitle, partnerLabel })),
   };
 }
+
+// ─── The learning path (home screen) ─────────────────────────
+// Units of short nodes that unlock one after another. A lesson node is a scenario conversation,
+// a review node is a warm-up on the learner's own mistakes, a chest/trophy node is a reward.
+export const units = [
+  {
+    id: 'u1', n: 1, title: 'Job interviews', ml: 'ജോബ് ഇന്റർവ്യൂ', color: 'green',
+    nodes: [
+      { id: 'interview_intro', type: 'lesson' },
+      { id: 'u1_review', type: 'review' },
+      { id: 'interview_hire', type: 'lesson' },
+      { id: 'u1_chest', type: 'chest' },
+    ],
+  },
+  {
+    id: 'u2', n: 2, title: 'At the office', ml: 'ഓഫീസിൽ', color: 'blue',
+    nodes: [
+      { id: 'office_update', type: 'lesson' },
+      { id: 'u2_review', type: 'review' },
+      { id: 'office_leave', type: 'lesson' },
+      { id: 'u2_chest', type: 'chest' },
+    ],
+  },
+  {
+    id: 'u3', n: 3, title: 'Everyday life', ml: 'ദിവസേനയുള്ള ജീവിതം', color: 'clay',
+    nodes: [
+      { id: 'daily_cafe', type: 'lesson' },
+      { id: 'u3_review', type: 'review' },
+      { id: 'daily_travel', type: 'lesson' },
+      { id: 'u3_trophy', type: 'trophy' },
+    ],
+  },
+];

@@ -106,3 +106,20 @@ test('settings, insights, referral bonus and nudges', async () => {
   who = 'b';
   assert.equal((await call('/me', { method: 'DELETE' })).data.ok, true);
 });
+
+test('learning path unlocks step by step', async () => {
+  who = 'a';
+  jar.a = '';
+  const p0 = await call('/path');
+  const flat = (r) => r.data.units.flatMap((u) => u.nodes);
+  assert.equal(flat(p0)[0].state, 'current');
+  assert.equal(flat(p0)[1].state, 'locked');
+  const s = await call('/sessions', { method: 'POST', body: { scenarioId: 'interview_intro' } });
+  await call(`/sessions/${s.data.session.id}/turn`, { method: 'POST', form: text('I have completed my BTech in 2021 from Kochi.') });
+  const end = await call(`/sessions/${s.data.session.id}/end`, { method: 'POST' });
+  assert.equal(end.data.firstToday, true);
+  const p1 = flat(await call('/path'));
+  assert.equal(p1[0].state, 'done');
+  assert.equal(p1[1].state, 'current');
+  assert.equal((await call('/path/u1_chest/complete', { method: 'POST' })).status, 409, 'locked reward cannot be opened');
+});
