@@ -106,6 +106,10 @@ addColumn('users', 'xp', 'INTEGER NOT NULL DEFAULT 0');
 addColumn('users', 'freezes', 'INTEGER NOT NULL DEFAULT 1');
 addColumn('users', 'badges_seen', "TEXT NOT NULL DEFAULT '[]'");
 addColumn('users', 'next_hook', 'TEXT');
+addColumn('users', 'target_role', 'TEXT');
+addColumn('users', 'experience', 'TEXT');
+addColumn('users', 'interview_date', 'TEXT');
+addColumn('users', 'company', 'TEXT');
 db.exec(`
 CREATE UNIQUE INDEX IF NOT EXISTS idx_users_ref ON users(ref_code);
 CREATE TABLE IF NOT EXISTS nudges (
@@ -132,6 +136,18 @@ CREATE TABLE IF NOT EXISTS xp_log (
   created_at TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_xp_user_day ON xp_log(user_id, day);
+CREATE TABLE IF NOT EXISTS answers (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  area TEXT NOT NULL,
+  question TEXT NOT NULL,
+  answer TEXT NOT NULL,
+  polished TEXT,
+  rating INTEGER NOT NULL,
+  rehearsed INTEGER NOT NULL DEFAULT 0,
+  created_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_answers_user ON answers(user_id, area, id);
 CREATE TABLE IF NOT EXISTS path_progress (
   user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
   node_id TEXT NOT NULL,
@@ -185,7 +201,7 @@ export function touchUser(id) {
   db.prepare('UPDATE users SET last_seen_at = ? WHERE id = ?').run(now(), id);
 }
 
-export function updateProfile(id, { name, job_role, goals, facts }) {
+export function updateProfile(id, { name, job_role, goals, facts, target_role, experience, interview_date, company }) {
   const u = getUser(id);
   if (!u) return null;
   const clean = (v, max = 120) => (typeof v === 'string' && v.trim() ? v.trim().slice(0, max) : null);
@@ -204,6 +220,14 @@ export function updateProfile(id, { name, job_role, goals, facts }) {
     JSON.stringify(mergedFacts),
     id,
   );
+  const date = typeof interview_date === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(interview_date) ? interview_date : interview_date === '' ? null : undefined;
+  db.prepare('UPDATE users SET target_role = ?, experience = ?, interview_date = ?, company = ? WHERE id = ?').run(
+    clean(target_role, 20) ?? u.target_role,
+    clean(experience, 20) ?? u.experience,
+    date === undefined ? u.interview_date : date,
+    company === '' ? null : clean(company, 80) ?? u.company,
+    id,
+  );
   return getUser(id);
 }
 
@@ -214,6 +238,7 @@ export function mergeUsers(fromId, intoId) {
   try {
     db.prepare('UPDATE sessions SET user_id = ? WHERE user_id = ?').run(intoId, fromId);
     db.prepare('UPDATE events SET user_id = ? WHERE user_id = ?').run(intoId, fromId);
+    db.prepare('UPDATE answers SET user_id = ? WHERE user_id = ?').run(intoId, fromId);
     for (const m of db.prepare('SELECT * FROM mistakes WHERE user_id = ?').all(fromId)) {
       const existing = db.prepare('SELECT id FROM mistakes WHERE user_id = ? AND key = ?').get(intoId, m.key);
       if (existing) {
@@ -231,11 +256,15 @@ export function mergeUsers(fromId, intoId) {
     }
     const from = getUser(fromId);
     const into = getUser(intoId);
-    db.prepare('UPDATE users SET name = COALESCE(name, ?), job_role = COALESCE(job_role, ?), goals = COALESCE(goals, ?), referred_by = COALESCE(referred_by, ?) WHERE id = ?').run(
+    db.prepare('UPDATE users SET name = COALESCE(name, ?), job_role = COALESCE(job_role, ?), goals = COALESCE(goals, ?), referred_by = COALESCE(referred_by, ?), target_role = COALESCE(target_role, ?), experience = COALESCE(experience, ?), interview_date = COALESCE(interview_date, ?), company = COALESCE(company, ?) WHERE id = ?').run(
       from?.name ?? null,
       from?.job_role ?? null,
       from?.goals ?? null,
       from?.referred_by && from.referred_by !== intoId ? from.referred_by : null,
+      from?.target_role ?? null,
+      from?.experience ?? null,
+      from?.interview_date ?? null,
+      from?.company ?? null,
       intoId,
     );
     db.prepare('UPDATE nudges SET user_id = ? WHERE user_id = ?').run(intoId, fromId);
@@ -548,16 +577,16 @@ export function nudgeCandidates() {
 
 // ─── Habit engine: XP, levels, quests, streak freezes, badges ─
 export const LEVELS = [
-  { at: 0, name: 'First Words', ml: 'ആദ്യ വാക്കുകൾ' },
-  { at: 100, name: 'Ice Breaker', ml: 'മടി മാറുന്നു' },
-  { at: 250, name: 'Small Talker', ml: 'ചെറിയ സംസാരം' },
-  { at: 450, name: 'Confident Chatter', ml: 'ധൈര്യം വന്നു' },
-  { at: 700, name: 'Meeting Ready', ml: 'മീറ്റിംഗിന് റെഡി' },
-  { at: 1000, name: 'Interview Ready', ml: 'ഇന്റർവ്യൂവിന് റെഡി' },
-  { at: 1400, name: 'Story Teller', ml: 'കഥ പറയുന്നയാൾ' },
-  { at: 1900, name: 'Presenter', ml: 'അവതാരകൻ' },
-  { at: 2500, name: 'Fluent Friend', ml: 'നന്നായി സംസാരിക്കും' },
-  { at: 3200, name: 'Natural Speaker', ml: 'സ്വാഭാവികമായി' },
+  { at: 0, name: 'Applicant', ml: 'അപേക്ഷകൻ' },
+  { at: 100, name: 'Resume Ready', ml: 'റെസ്യൂമെ റെഡി' },
+  { at: 250, name: 'Shortlisted', ml: 'ഷോർട്ട്‌ലിസ്റ്റ് ചെയ്തു' },
+  { at: 450, name: 'Phone Screen Ready', ml: 'ഫോൺ ഇന്റർവ്യൂ റെഡി' },
+  { at: 700, name: 'HR Round Ready', ml: 'HR റൗണ്ട് റെഡി' },
+  { at: 1000, name: 'Technical Round Ready', ml: 'ടെക്നിക്കൽ റൗണ്ട് റെഡി' },
+  { at: 1400, name: 'Manager Round Ready', ml: 'മാനേജർ റൗണ്ട് റെഡി' },
+  { at: 1900, name: 'Final Round Ready', ml: 'ഫൈനൽ റൗണ്ട് റെഡി' },
+  { at: 2500, name: 'Offer Ready', ml: 'ഓഫർ റെഡി' },
+  { at: 3200, name: 'Hired', ml: 'ജോലി കിട്ടി!' },
 ];
 
 export function levelFor(xp) {
@@ -576,7 +605,7 @@ export function levelFor(xp) {
   };
 }
 
-export const XP = { reply: 10, clean_reply: 5, retry_pass: 10, mastered: 25, bank_pass: 8, warmup_done: 20, goal_met: 30, quests_done: 50, streak_milestone: 40 };
+export const XP = { strong_answer: 10, reply: 10, clean_reply: 5, retry_pass: 10, mastered: 25, bank_pass: 8, warmup_done: 20, goal_met: 30, quests_done: 50, streak_milestone: 40 };
 
 /** Award XP; `once` makes it at most once per day per reason (e.g. daily goal). Returns the amount awarded. */
 export function awardXp(userId, reason, amount = XP[reason] || 0, { once = false } = {}) {
@@ -665,17 +694,17 @@ export function claimChest(userId) {
 }
 
 export const BADGES = [
-  { id: 'first_chat', name: 'First conversation', ml: 'ആദ്യ സംഭാഷണം', test: (s) => s.sessionsDone >= 1 },
+  { id: 'first_chat', name: 'First interview answer', ml: 'ആദ്യ ഉത്തരം', test: (s) => s.sessionsDone >= 1 },
   { id: 'lifeline', name: 'Used the lifeline', ml: 'മലയാളം സഹായം', test: (s, x) => x.lifeline >= 1 },
   { id: 'said_it', name: 'Said it right', ml: 'ശരിയായി പറഞ്ഞു', test: (s, x) => x.retries >= 1 },
+  { id: 'strong1', name: 'Interview-ready answer', ml: 'മികച്ച ഉത്തരം', test: (s, x) => x.strong >= 1 },
+  { id: 'areas7', name: 'Covered every area', ml: 'എല്ലാ മേഖലകളും', test: (s, x) => x.areas >= 7 },
+  { id: 'mock1', name: 'First mock interview', ml: 'ആദ്യ മോക്ക് ഇന്റർവ്യൂ', test: (s, x) => x.mocks >= 1 },
+  { id: 'mock3', name: '3 mock interviews', ml: '3 മോക്ക് ഇന്റർവ്യൂ', test: (s, x) => x.mocks >= 3 },
+  { id: 'ready70', name: '70% interview ready', ml: '70% റെഡി', test: (s, x) => x.readiness >= 70 },
   { id: 'streak3', name: '3-day streak', ml: '3 ദിവസം', test: (s) => s.streak >= 3 },
   { id: 'streak7', name: 'One full week', ml: 'ഒരാഴ്ച', test: (s) => s.streak >= 7 },
-  { id: 'streak30', name: '30-day habit', ml: '30 ദിവസം', test: (s) => s.streak >= 30 },
-  { id: 'min10', name: '10 minutes spoken', ml: '10 മിനിറ്റ്', test: (s) => s.minutesSpoken >= 10 },
-  { id: 'min60', name: 'One hour of English', ml: 'ഒരു മണിക്കൂർ', test: (s) => s.minutesSpoken >= 60 },
-  { id: 'master1', name: 'First mistake mastered', ml: 'ആദ്യ വിജയം', test: (s) => s.mistakesMastered >= 1 },
-  { id: 'master10', name: '10 mistakes mastered', ml: '10 തെറ്റുകൾ ജയിച്ചു', test: (s) => s.mistakesMastered >= 10 },
-  { id: 'all3', name: 'Tried every situation', ml: 'എല്ലാം പരീക്ഷിച്ചു', test: (s, x) => x.categories >= 3 },
+  { id: 'master5', name: '5 mistakes mastered', ml: '5 തെറ്റുകൾ ജയിച്ചു', test: (s) => s.mistakesMastered >= 5 },
   { id: 'friend', name: 'Brought a friend', ml: 'സുഹൃത്തിനെ കൊണ്ടുവന്നു', test: (s, x) => x.referrals >= 1 },
 ];
 
@@ -684,7 +713,10 @@ export function badgeStatus(userId) {
   const x = {
     lifeline: db.prepare("SELECT COUNT(*) AS n FROM events WHERE user_id = ? AND type = 'lifeline_used'").get(userId).n,
     retries: db.prepare("SELECT COUNT(*) AS n FROM events WHERE user_id = ? AND type = 'retry_pass'").get(userId).n,
-    categories: new Set(db.prepare('SELECT scenario_id FROM sessions WHERE user_id = ? AND done = 1').all(userId).map((r) => r.scenario_id.split('_')[0])).size,
+    strong: db.prepare('SELECT COUNT(*) AS n FROM answers WHERE user_id = ? AND rating = 3').get(userId).n,
+    areas: db.prepare('SELECT COUNT(DISTINCT area) AS n FROM answers WHERE user_id = ?').get(userId).n,
+    mocks: db.prepare("SELECT COUNT(*) AS n FROM sessions WHERE user_id = ? AND done = 1 AND scenario_id = 'mock_full'").get(userId).n,
+    readiness: readiness(userId).score,
     referrals: referralCount(userId),
   };
   const u = getUser(userId);
@@ -715,4 +747,57 @@ export function completeNode(userId, nodeId) {
 
 export function nodeRuns(userId) {
   return Object.fromEntries(db.prepare('SELECT node_id, runs FROM path_progress WHERE user_id = ?').all(userId).map((r) => [r.node_id, r.runs]));
+}
+
+// ─── Interview answers & readiness ───────────────────────────
+// Rating scale from the coach: 1 = needs work, 2 = good, 3 = interview-ready.
+export const READINESS_AREAS = ['intro', 'experience', 'strengths', 'role', 'behavioural', 'motivation', 'closing'];
+
+export function saveAnswer(userId, { area, question, answer, polished, rating }) {
+  if (!READINESS_AREAS.includes(area)) return null;
+  const r = db
+    .prepare('INSERT INTO answers (user_id, area, question, answer, polished, rating, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)')
+    .run(userId, area, String(question).slice(0, 300), String(answer).slice(0, 1200), polished ? String(polished).slice(0, 800) : null, rating, now());
+  return Number(r.lastInsertRowid);
+}
+
+/** Per-area readiness from the learner's best recent answers. 0–100 overall. */
+export function readiness(userId) {
+  const rows = db.prepare('SELECT area, rating, created_at FROM answers WHERE user_id = ? ORDER BY id DESC').all(userId);
+  const byArea = {};
+  for (const r of rows) (byArea[r.area] ||= []).push(r.rating);
+  const result = READINESS_AREAS.map((a) => {
+    const recent = (byArea[a] || []).slice(0, 3);
+    // Best of the last three answers counts most, with a small bonus for consistency.
+    const best = recent.length ? Math.max(...recent) : 0;
+    const avg = recent.length ? recent.reduce((x, y) => x + y, 0) / recent.length : 0;
+    const pct = recent.length ? Math.round(((best * 0.7 + avg * 0.3) / 3) * 100) : 0;
+    return { area: a, pct, answers: (byArea[a] || []).length };
+  });
+  const score = Math.round(result.reduce((x, r) => x + r.pct, 0) / result.length);
+  return { score, areas: result };
+}
+
+/** The learner's answer bank: their best polished answer per area. */
+export function answerBank(userId) {
+  return db
+    .prepare(
+      `SELECT a.* FROM answers a
+       WHERE a.user_id = ? AND a.polished IS NOT NULL AND a.id = (
+         SELECT b.id FROM answers b WHERE b.user_id = a.user_id AND b.area = a.area AND b.polished IS NOT NULL
+         ORDER BY b.rating DESC, b.id DESC LIMIT 1)
+       ORDER BY a.area`,
+    )
+    .all(userId);
+}
+
+export function markRehearsed(userId, id) {
+  db.prepare('UPDATE answers SET rehearsed = rehearsed + 1 WHERE id = ? AND user_id = ?').run(id, userId);
+}
+
+export function daysUntil(dateStr) {
+  if (!dateStr) return null;
+  const today = new Date(dayOf() + 'T00:00:00Z');
+  const d = new Date(dateStr + 'T00:00:00Z');
+  return Math.round((d - today) / 86400000);
 }

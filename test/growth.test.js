@@ -35,7 +35,7 @@ const text = (t) => {
   return f;
 };
 async function practise() {
-  const s = await call('/sessions', { method: 'POST', body: { scenarioId: 'office_update' } });
+  const s = await call('/sessions', { method: 'POST', body: { scenarioId: 'strengths' } });
   await call(`/sessions/${s.data.session.id}/turn`, { method: 'POST', form: text('We discussed about the new project in the meeting.') });
   await call(`/sessions/${s.data.session.id}/end`, { method: 'POST' });
 }
@@ -114,7 +114,7 @@ test('learning path unlocks step by step', async () => {
   const flat = (r) => r.data.units.flatMap((u) => u.nodes);
   assert.equal(flat(p0)[0].state, 'current');
   assert.equal(flat(p0)[1].state, 'locked');
-  const s = await call('/sessions', { method: 'POST', body: { scenarioId: 'interview_intro' } });
+  const s = await call('/sessions', { method: 'POST', body: { scenarioId: 'intro_yourself' } });
   await call(`/sessions/${s.data.session.id}/turn`, { method: 'POST', form: text('I have completed my BTech in 2021 from Kochi.') });
   const end = await call(`/sessions/${s.data.session.id}/end`, { method: 'POST' });
   assert.equal(end.data.firstToday, true);
@@ -122,4 +122,42 @@ test('learning path unlocks step by step', async () => {
   assert.equal(p1[0].state, 'done');
   assert.equal(p1[1].state, 'current');
   assert.equal((await call('/path/u1_chest/complete', { method: 'POST' })).status, 409, 'locked reward cannot be opened');
+});
+
+test('interview prep: job profile, coaching feedback, readiness, answer & question banks, drills', async () => {
+  who = 'a';
+  jar.a = '';
+  const prof = await call('/profile', { method: 'POST', body: { targetRole: 'nursing', experience: 'fresher', interviewDate: '2099-01-10', company: 'Aster' } });
+  assert.equal(prof.data.user.targetRoleLabel, 'Nursing / Healthcare');
+  assert.ok(prof.data.user.daysToInterview > 0);
+
+  const s = await call('/sessions', { method: 'POST', body: { scenarioId: 'intro_yourself' } });
+  const t = await call(`/sessions/${s.data.session.id}/turn`, { method: 'POST', form: text('I have completed my BSc Nursing in 2023 from Kochi.') });
+  assert.ok([1, 2, 3].includes(t.data.coaching.rating));
+  assert.ok(t.data.coaching.tip && t.data.coaching.tipMl && t.data.coaching.stronger);
+
+  const me = await call('/me');
+  assert.ok(me.data.readiness.score > 0, 'readiness grows after an answer');
+  assert.equal(me.data.readiness.areas.length, 7);
+
+  const ans = await call('/answers');
+  assert.equal(ans.data.answers.length, 1);
+  const q = await call('/questions');
+  assert.match(q.data.areas.find((a) => a.id === 'role').questions[0], /patient/i, 'role questions follow the chosen job');
+
+  await call(`/sessions/${s.data.session.id}/end`, { method: 'POST' });
+  await login('+919000000002');
+  const d = await call('/sessions', { method: 'POST', body: { scenarioId: 'drill', question: 'What is your biggest weakness?' } });
+  assert.equal(d.data.opener, 'What is your biggest weakness?');
+  const dt = await call(`/sessions/${d.data.session.id}/turn`, { method: 'POST', form: text('I sometimes take too long to double check my work.') });
+  assert.equal(dt.data.done, true, 'a drill is a single question');
+
+  const top = (await call('/answers')).data.answers[0];
+  const rehearse = new FormData();
+  rehearse.append('text', top.polished);
+  rehearse.append('target', top.polished);
+  rehearse.append('context', 'answer');
+  rehearse.append('answerId', String(top.id));
+  assert.equal((await call('/retry', { method: 'POST', form: rehearse })).data.pass, true);
+  assert.equal((await call('/answers')).data.answers.find((a) => a.id === top.id).rehearsed, 1);
 });
