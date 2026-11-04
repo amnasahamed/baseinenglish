@@ -1,8 +1,8 @@
-// Everything here is about one goal: pass a job interview in English.
-// A "scenario" is one interview round with its own interviewer and question focus. The LLM
-// writes the actual questions, tailored to the learner's target role, experience and company.
+// Base teaches spoken English to Malayalam speakers who want a (better) job.
+// The goal is English; the job journey is the context: introducing yourself, talking about
+// your work, phone & HR calls, interview answers, and English at the new job.
 
-// ─── Job tracks (picked during onboarding) ───────────────────
+// ─── Job tracks (personalise the context and vocabulary) ─────
 export const roles = [
   { id: 'it', label: 'Software / IT', ml: 'ഐടി / സോഫ്റ്റ്‌വെയർ' },
   { id: 'nursing', label: 'Nursing / Healthcare', ml: 'നഴ്സിംഗ് / ആരോഗ്യം' },
@@ -21,218 +21,251 @@ export const experienceLevels = [
   { id: 'senior', label: '3+ years', ml: '3+ വർഷം' },
 ];
 
-// Interview areas used for feedback, the readiness score and the question bank.
+// Speaking situations — used for feedback, the "job-ready English" score and speaking practice.
 export const areas = [
   { id: 'intro', label: 'Introducing yourself', ml: 'സ്വയം പരിചയപ്പെടുത്തൽ' },
-  { id: 'experience', label: 'Experience & projects', ml: 'അനുഭവം' },
-  { id: 'strengths', label: 'Strengths & weaknesses', ml: 'കഴിവുകളും കുറവുകളും' },
-  { id: 'role', label: 'Role questions', ml: 'ജോലി സംബന്ധമായ ചോദ്യങ്ങൾ' },
-  { id: 'behavioural', label: 'Tough situations', ml: 'ബുദ്ധിമുട്ടുള്ള സാഹചര്യങ്ങൾ' },
-  { id: 'motivation', label: 'Why you, why us', ml: 'എന്തുകൊണ്ട് നിങ്ങൾ' },
-  { id: 'closing', label: 'Salary & closing', ml: 'ശമ്പളം, അവസാന ചോദ്യങ്ങൾ' },
+  { id: 'work', label: 'Talking about your work', ml: 'ജോലിയെക്കുറിച്ച് സംസാരിക്കൽ' },
+  { id: 'calls', label: 'Phone & HR calls', ml: 'ഫോൺ / HR കോളുകൾ' },
+  { id: 'interview', label: 'Interview answers', ml: 'ഇന്റർവ്യൂ ഉത്തരങ്ങൾ' },
+  { id: 'workplace', label: 'English at work', ml: 'ഓഫീസിലെ ഇംഗ്ലീഷ്' },
 ];
 export const areaIds = areas.map((a) => a.id);
 
-// ─── Interview rounds ────────────────────────────────────────
+// ─── Speaking lessons (conversations) ────────────────────────
 export const scenarios = [
+  // Unit 1 — introduce yourself
   {
-    id: 'intro_yourself',
-    title: 'Tell me about yourself',
-    subtitle: 'The first 60 seconds that decide everything',
-    partnerLabel: 'HR interviewer',
-    role: 'a friendly but professional HR interviewer doing the first round',
-    brief:
-      'Start with "Tell me about yourself". Then ask short follow-ups on what they said: education, current/last role (or final-year project for freshers), and why they chose this field. Keep it realistic.',
-    opener: "Hi, welcome! Thanks for coming in. Let's start — can you tell me a little about yourself?",
-    areas: ['intro'],
-    maxTurns: 4,
+    id: 'intro_yourself', area: 'intro', title: 'Introduce yourself', subtitle: 'Name, studies, job — in clear English',
+    partnerLabel: 'New friendly HR', role: 'a friendly HR person meeting the learner for the first time',
+    brief: 'Ask them to introduce themselves, then simple follow-ups: where they are from, what they studied, what they do now. Keep questions short and easy.',
+    opener: "Hi! Nice to meet you. Could you introduce yourself?", maxTurns: 4,
   },
   {
-    id: 'resume_walk',
-    title: 'Walk me through your resume',
-    subtitle: 'Education, jobs, gaps and changes',
-    partnerLabel: 'HR interviewer',
-    role: 'an HR interviewer going through the candidate\'s resume',
-    brief:
-      'Ask them to walk you through their resume. Ask about their education, each job or internship, any gap year, and any change of field. Ask one realistic follow-up about something specific they mention.',
-    opener: "I have your resume here. Could you walk me through it — start from your education?",
-    areas: ['intro', 'experience'],
-    maxTurns: 4,
+    id: 'background', area: 'intro', title: 'Your background', subtitle: 'Family, hometown, hobbies',
+    partnerLabel: 'Friendly colleague', role: 'a friendly new colleague making small talk',
+    brief: 'Make light small talk: their hometown, family, what they like doing in free time, why they chose their field. Simple questions, one at a time.',
+    opener: "So, where are you from originally?", maxTurns: 4,
+  },
+  // Unit 2 — talk about your work
+  {
+    id: 'work_studies', area: 'work', title: 'Your work & studies', subtitle: 'Say what you do — and what you did',
+    partnerLabel: 'Team lead', role: 'a team lead who wants to understand what the learner does',
+    brief: 'Ask what they do every day in their job (freshers: their studies or internship), what they did last week, and what tools or skills they use. Encourage present and past tense.',
+    opener: "Tell me — what do you do on a normal working day?", maxTurns: 4,
   },
   {
-    id: 'experience_star',
-    title: 'Your experience & projects',
-    subtitle: 'Explain what you did — and the result',
-    partnerLabel: 'Hiring manager',
-    role: 'a hiring manager who wants concrete examples',
-    brief:
-      'Ask about their day-to-day work, one project or achievement they are proud of (freshers: final-year project or internship), what exactly THEY did, and the result. Push gently for specifics and numbers.',
-    opener: "Tell me about a project or piece of work you're really proud of. What was your part in it?",
-    areas: ['experience'],
-    maxTurns: 4,
+    id: 'experience_star', area: 'work', title: 'A project you are proud of', subtitle: 'Tell a short work story',
+    partnerLabel: 'Hiring manager', role: 'a hiring manager who enjoys hearing work stories',
+    brief: 'Ask about one project or achievement (freshers: final-year project or internship): what it was, what THEY did, a problem they faced and the result.',
+    opener: "Tell me about a project or piece of work you're proud of.", maxTurns: 4,
+  },
+  // Unit 3 — phone & HR calls
+  {
+    id: 'hr_call', area: 'calls', title: 'HR screening call', subtitle: 'The first phone call from a company',
+    partnerLabel: 'HR on the phone', role: 'an HR recruiter calling the learner on the phone about a job application',
+    brief: 'Phone-call style: confirm who you are speaking to, check they applied, ask current role/notice period, expected salary, and fix an interview time. Short phone-style lines.',
+    opener: "Hello, am I speaking with the candidate who applied for the opening at our company? This is Priya from HR.", maxTurns: 5,
   },
   {
-    id: 'strengths',
-    title: 'Strengths & weaknesses',
-    subtitle: 'Sound confident without bragging',
-    partnerLabel: 'HR interviewer',
-    role: 'an HR interviewer',
-    brief:
-      'Ask: their biggest strength (and an example of it), their biggest weakness (and what they are doing about it), and how a colleague or teacher would describe them.',
-    opener: 'What would you say is your biggest strength?',
-    areas: ['strengths'],
-    maxTurns: 4,
+    id: 'followup_call', area: 'calls', title: 'Reschedule & follow up', subtitle: 'Call HR politely about your interview',
+    partnerLabel: 'HR receptionist', role: 'an HR receptionist answering the phone',
+    brief: 'The learner is the caller. Play the receptionist: ask who is calling and why. They might need to reschedule an interview or ask about their application status. Ask polite clarifying questions.',
+    opener: "Good morning, HR department. How can I help you?", maxTurns: 4,
+  },
+  // Unit 4 — interview English
+  {
+    id: 'strengths', area: 'interview', title: 'Strengths & weaknesses', subtitle: 'Describe yourself confidently',
+    partnerLabel: 'Interviewer', role: 'a kind interviewer',
+    brief: 'Ask about their biggest strength (with an example), a weakness and how they are improving, and how others would describe them.',
+    opener: 'What would you say is your biggest strength?', maxTurns: 4,
   },
   {
-    id: 'role_questions',
-    title: 'Questions for your role',
-    subtitle: 'The job-specific round',
-    partnerLabel: 'Team lead',
-    role: 'the team lead for the exact role the candidate is applying for',
-    brief:
-      'Ask realistic, commonly asked questions for THEIR target role and experience level (e.g. IT: explain a technology/bug you fixed; nursing: patient care, handling an emergency, shift work; support/BPO: handling an angry customer, targets; sales: selling a product, targets; accounts: tools, reconciliation; teaching: classroom management). Keep questions answerable without deep technical jargon.',
-    opener: "Let's talk about the job itself. What do you think are the most important skills for this role?",
-    areas: ['role'],
-    maxTurns: 4,
+    id: 'why_hire', area: 'interview', title: 'Why should we hire you?', subtitle: 'Talk about your goals',
+    partnerLabel: 'Hiring manager', role: 'a hiring manager',
+    brief: 'Ask why they want this job, why you should hire them, where they see themselves in five years.',
+    opener: "Why do you want this job?", maxTurns: 4,
   },
   {
-    id: 'behavioural',
-    title: 'Tough situations',
-    subtitle: 'Pressure, conflict and mistakes',
-    partnerLabel: 'Manager',
-    role: 'a calm manager asking behavioural questions',
-    brief:
-      'Ask behavioural questions one at a time: a time they worked under pressure or a tight deadline, a disagreement with a colleague, a mistake they made and what they learned. Expect a short situation → action → result story.',
-    opener: 'Tell me about a time you had to work under a lot of pressure. What happened?',
-    areas: ['behavioural'],
-    maxTurns: 4,
+    id: 'role_questions', area: 'interview', title: 'Questions about your field', subtitle: 'Explain your work clearly',
+    partnerLabel: 'Team lead', role: "a team lead from the learner's field",
+    brief: "Ask simple, common questions for THEIR field (IT: a technology you know; nursing: caring for a patient; support: an angry customer; sales: selling a product; accounts: tools you use; teaching: a difficult student). Keep it about explaining clearly, not deep technical tests.",
+    opener: "Let's talk about your field. What skills do you think are most important in your work?", maxTurns: 4,
   },
   {
-    id: 'why_hire',
-    title: 'Why should we hire you?',
-    subtitle: 'Why this job, why this company, why you',
-    partnerLabel: 'Hiring manager',
-    role: 'a hiring manager in the final round',
-    brief:
-      'Ask: why should we hire you, why do you want to work at this company, where do you see yourself in five years, and (if they have a job) why are you leaving your current job.',
-    opener: "So, out of all the candidates we're meeting — why should we hire you?",
-    areas: ['motivation'],
-    maxTurns: 4,
+    id: 'mock_full', area: 'interview', title: 'Full mock interview', subtitle: 'Put all your English together',
+    partnerLabel: 'Interview panel', role: "an interview panel for the learner's target job",
+    brief: 'Run a full but friendly interview, ONE question per turn: introduce yourself → your work or studies → a project → a strength → a difficult situation → why this job → notice period or availability → "any questions for us?".',
+    opener: "Good morning, and welcome. Let's begin — please introduce yourself.", maxTurns: 8,
+  },
+  // Unit 5 — English at your new job
+  {
+    id: 'office_update', area: 'workplace', title: 'Daily team update', subtitle: 'Yesterday, today, any problems',
+    partnerLabel: 'Team lead', role: 'a supportive team lead running a short morning standup',
+    brief: 'Ask what they did yesterday, what they will do today and whether anything is blocking them. One follow-up about a task they mention.',
+    opener: "Good morning! Quick update — what did you work on yesterday?", maxTurns: 4,
   },
   {
-    id: 'salary_close',
-    title: 'Salary & closing questions',
-    subtitle: 'Expected salary, notice period, your questions',
-    partnerLabel: 'HR interviewer',
-    role: 'an HR interviewer wrapping up the process',
-    brief:
-      'Ask: expected salary, current salary or notice period, readiness for shifts/relocation/travel if relevant to their role, when they can join, and finally "Do you have any questions for us?". React like real HR.',
-    opener: 'We are nearly done. What are your salary expectations for this role?',
-    areas: ['closing'],
-    maxTurns: 4,
+    id: 'office_leave', area: 'workplace', title: 'Leave & delays', subtitle: 'Ask your manager politely',
+    partnerLabel: 'Manager', role: 'a busy but fair manager',
+    brief: 'First they ask for leave (ask why, which dates, who covers their work). Then ask about a task that is late and let them explain politely with a new timeline.',
+    opener: "Hi, you wanted to talk to me? Sure, I have a few minutes.", maxTurns: 4,
   },
   {
-    id: 'mock_full',
-    title: 'Full mock interview',
-    subtitle: 'The real thing, start to finish',
-    partnerLabel: 'Interview panel',
-    role: 'an interview panel running a complete realistic interview for the candidate\'s target role',
-    brief:
-      'Run a complete interview in this order, ONE question per turn: tell me about yourself → their experience or a project → one role-specific question → a strength or weakness → a pressure/conflict situation → why should we hire you → salary or notice period → "Any questions for us?". Adapt follow-ups to what they say.',
-    opener: "Good morning, and thank you for coming. We'll go through a full interview today. Please introduce yourself.",
-    areas: ['intro', 'experience', 'role', 'strengths', 'behavioural', 'motivation', 'closing'],
-    maxTurns: 8,
+    id: 'customer_call', area: 'workplace', title: 'Talking to a customer', subtitle: 'Help, apologise, solve',
+    partnerLabel: 'Customer', role: 'a slightly unhappy customer with a problem related to the learner\'s field (or a delayed order)',
+    brief: 'Explain your problem. Let the learner greet, listen, apologise, ask questions and offer a solution. Calm down when they handle it well.',
+    opener: "Hello? I've been waiting three days for an update and nobody has called me back.", maxTurns: 4,
   },
+  // Single-question speaking practice
   {
-    id: 'drill',
-    title: 'Question practice',
-    subtitle: 'One interview question',
-    partnerLabel: 'Interviewer',
-    role: 'an interviewer asking one practice question',
-    brief: 'The candidate is practising one single interview question. After their answer, give a brief, warm closing line (no new question).',
-    opener: 'Tell me about yourself.',
-    areas: [],
-    maxTurns: 1,
-    hidden: true,
+    id: 'drill', area: null, title: 'Speaking practice', subtitle: 'One question',
+    partnerLabel: 'Coach', role: 'a coach asking one practice question',
+    brief: 'The learner is practising one question. After their answer, give a brief warm closing line (no new question).',
+    opener: 'Tell me about yourself.', maxTurns: 1, hidden: true,
   },
 ];
-
 export const scenarioById = Object.fromEntries(scenarios.map((s) => [s.id, s]));
 
 export function publicScenarios() {
   return {
-    scenarios: scenarios.filter((s) => !s.hidden).map(({ id, title, subtitle, partnerLabel }) => ({ id, title, subtitle, partnerLabel })),
+    scenarios: scenarios.filter((s) => !s.hidden).map(({ id, title, subtitle, partnerLabel, area }) => ({ id, title, subtitle, partnerLabel, area })),
     roles,
     experienceLevels,
     areas,
   };
 }
 
-// ─── The learning path: the interview, stage by stage ────────
+// ─── Phrase lessons: the "learn" step of every unit ──────────
+// Listen → understand (Malayalam) → say it out loud. Short, useful, job-related sentences.
+export const phraseLessons = {
+  u1_phrases: {
+    title: 'Phrases to introduce yourself',
+    phrases: [
+      { en: "Hi, I'm Anjali. I'm from Thrissur.", ml: 'ഹായ്, ഞാൻ അഞ്ജലി. ഞാൻ തൃശ്ശൂരിൽ നിന്നാണ്.', note: 'Say "I\'m …", not "Myself …".' },
+      { en: 'I completed my B.Com in 2022.', ml: '2022-ൽ ഞാൻ B.Com പൂർത്തിയാക്കി.', note: 'Use "completed" for finished studies.' },
+      { en: 'I have two years of experience in customer support.', ml: 'കസ്റ്റമർ സപ്പോർട്ടിൽ എനിക്ക് രണ്ട് വർഷത്തെ പരിചയമുണ്ട്.', note: 'Not "I am having two years experience".' },
+      { en: "I'm currently working as a sales executive.", ml: 'ഞാൻ ഇപ്പോൾ സെയിൽസ് എക്സിക്യൂട്ടീവ് ആയി ജോലി ചെയ്യുന്നു.', note: '"currently" = ഇപ്പോൾ.' },
+      { en: 'In my free time, I enjoy reading.', ml: 'ഒഴിവു സമയത്ത് എനിക്ക് വായിക്കാൻ ഇഷ്ടമാണ്.', note: '"enjoy" + -ing: enjoy reading, enjoy cooking.' },
+    ],
+  },
+  u2_phrases: {
+    title: 'Phrases to talk about your work',
+    phrases: [
+      { en: 'I was responsible for handling customer complaints.', ml: 'കസ്റ്റമർ പരാതികൾ കൈകാര്യം ചെയ്യുന്നത് എന്റെ ചുമതലയായിരുന്നു.', note: '"responsible for" + -ing.' },
+      { en: 'My main task was to prepare the daily reports.', ml: 'ദിവസേനയുള്ള റിപ്പോർട്ടുകൾ തയ്യാറാക്കലായിരുന്നു എന്റെ പ്രധാന ജോലി.', note: '"main task" = പ്രധാന ജോലി.' },
+      { en: 'I worked on a project to reduce waiting time.', ml: 'കാത്തിരിപ്പ് സമയം കുറയ്ക്കാനുള്ള ഒരു പ്രോജക്റ്റിൽ ഞാൻ ജോലി ചെയ്തു.', note: '"worked on a project".' },
+      { en: 'We finished the project two weeks early.', ml: 'ഞങ്ങൾ പ്രോജക്റ്റ് രണ്ടാഴ്ച നേരത്തെ പൂർത്തിയാക്കി.', note: 'Past tense: finish → finished.' },
+      { en: 'I learned how to work under pressure.', ml: 'സമ്മർദ്ദത്തിൽ ജോലി ചെയ്യാൻ ഞാൻ പഠിച്ചു.', note: '"under pressure" = സമ്മർദ്ദത്തിൽ.' },
+    ],
+  },
+  u3_phrases: {
+    title: 'Phrases for phone & HR calls',
+    phrases: [
+      { en: 'Hello, this is Rahul speaking.', ml: 'ഹലോ, രാഹുൽ ആണ് സംസാരിക്കുന്നത്.', note: 'On the phone say "This is …", not "I am Rahul here".' },
+      { en: 'Sorry, could you please repeat that?', ml: 'ക്ഷമിക്കണം, ഒന്നുകൂടി പറയാമോ?', note: 'Polite and safe when you miss something.' },
+      { en: "I'm available for the interview on Monday morning.", ml: 'തിങ്കളാഴ്ച രാവിലെ ഇന്റർവ്യൂവിന് എനിക്ക് സൗകര്യമുണ്ട്.', note: '"available" = സൗകര്യമുണ്ട് / ഒഴിവുണ്ട്.' },
+      { en: 'My notice period is thirty days.', ml: 'എന്റെ നോട്ടീസ് പീരിയഡ് മുപ്പത് ദിവസമാണ്.', note: 'HR asks this in almost every call.' },
+      { en: 'Thank you for calling. I look forward to meeting you.', ml: 'വിളിച്ചതിന് നന്ദി. നിങ്ങളെ കാണാൻ കാത്തിരിക്കുന്നു.', note: '"look forward to" + -ing.' },
+    ],
+  },
+  u4_phrases: {
+    title: 'Phrases for interview answers',
+    phrases: [
+      { en: 'One of my strengths is that I learn quickly.', ml: 'വേഗം പഠിക്കും എന്നതാണ് എന്റെ ഒരു കഴിവ്.', note: 'A calm, confident way to start.' },
+      { en: "I'm working on improving my public speaking.", ml: 'പൊതുവേദിയിൽ സംസാരിക്കാനുള്ള കഴിവ് ഞാൻ മെച്ചപ്പെടുത്തുകയാണ്.', note: 'Talk about a weakness + what you are doing.' },
+      { en: "I believe I'm a good fit for this role because I enjoy working with people.", ml: 'ആളുകളോടൊപ്പം ജോലി ചെയ്യാൻ ഇഷ്ടമായതിനാൽ ഈ ജോലിക്ക് ഞാൻ അനുയോജ്യനാണെന്ന് ഞാൻ കരുതുന്നു.', note: '"a good fit" = അനുയോജ്യം.' },
+      { en: 'In my last job, I handled a difficult customer calmly.', ml: 'കഴിഞ്ഞ ജോലിയിൽ, ബുദ്ധിമുട്ടുള്ള ഒരു കസ്റ്റമറെ ഞാൻ ശാന്തമായി കൈകാര്യം ചെയ്തു.', note: '"handled … calmly".' },
+      { en: 'Could you tell me more about the team?', ml: 'ടീമിനെക്കുറിച്ച് കുറച്ചുകൂടി പറയാമോ?', note: 'A good question to ask at the end.' },
+    ],
+  },
+  u5_phrases: {
+    title: 'Phrases for English at work',
+    phrases: [
+      { en: "Yesterday I completed the testing, and today I'll work on the report.", ml: 'ഇന്നലെ ഞാൻ ടെസ്റ്റിംഗ് പൂർത്തിയാക്കി, ഇന്ന് റിപ്പോർട്ട് ചെയ്യും.', note: 'Past for yesterday, "I\'ll" for today.' },
+      { en: 'Could I take leave on Friday? I have a family function.', ml: 'വെള്ളിയാഴ്ച ലീവ് എടുക്കാമോ? ഒരു കുടുംബ ചടങ്ങുണ്ട്.', note: '"Could I …?" is polite.' },
+      { en: "Sorry for the delay. I'll send it by tomorrow evening.", ml: 'വൈകിയതിന് ക്ഷമിക്കണം. നാളെ വൈകുന്നേരത്തിനകം അയയ്ക്കാം.', note: '"by tomorrow" = നാളെക്കകം.' },
+      { en: 'Let me check and get back to you.', ml: 'ഞാൻ നോക്കിയിട്ട് തിരിച്ചു പറയാം.', note: 'Instead of "I will tell you after".' },
+      { en: 'We discussed the new plan in the meeting.', ml: 'മീറ്റിംഗിൽ ഞങ്ങൾ പുതിയ പ്ലാൻ ചർച്ച ചെയ്തു.', note: 'Say "discussed the plan", not "discussed about".' },
+    ],
+  },
+};
+
+// ─── The learning path ───────────────────────────────────────
 export const units = [
   {
-    id: 'u1', n: 1, title: 'First impressions', ml: 'ആദ്യ മതിപ്പ്', color: 'green',
+    id: 'u1', n: 1, title: 'Introduce yourself', ml: 'സ്വയം പരിചയപ്പെടുത്താം', color: 'green',
     nodes: [
+      { id: 'u1_phrases', type: 'phrases' },
       { id: 'intro_yourself', type: 'lesson' },
-      { id: 'resume_walk', type: 'lesson' },
+      { id: 'background', type: 'lesson' },
       { id: 'u1_review', type: 'review' },
       { id: 'u1_chest', type: 'chest' },
     ],
   },
   {
-    id: 'u2', n: 2, title: 'Your experience', ml: 'നിങ്ങളുടെ അനുഭവം', color: 'blue',
+    id: 'u2', n: 2, title: 'Talk about your work', ml: 'ജോലിയെക്കുറിച്ച് പറയാം', color: 'blue',
     nodes: [
+      { id: 'u2_phrases', type: 'phrases' },
+      { id: 'work_studies', type: 'lesson' },
       { id: 'experience_star', type: 'lesson' },
-      { id: 'strengths', type: 'lesson' },
       { id: 'u2_review', type: 'review' },
       { id: 'u2_chest', type: 'chest' },
     ],
   },
   {
-    id: 'u3', n: 3, title: 'The real questions', ml: 'ജോലിയുടെ ചോദ്യങ്ങൾ', color: 'clay',
+    id: 'u3', n: 3, title: 'Phone & HR calls', ml: 'ഫോൺ / HR കോളുകൾ', color: 'clay',
     nodes: [
-      { id: 'role_questions', type: 'lesson' },
-      { id: 'behavioural', type: 'lesson' },
+      { id: 'u3_phrases', type: 'phrases' },
+      { id: 'hr_call', type: 'lesson' },
+      { id: 'followup_call', type: 'lesson' },
       { id: 'u3_review', type: 'review' },
       { id: 'u3_chest', type: 'chest' },
     ],
   },
   {
-    id: 'u4', n: 4, title: 'Close the deal', ml: 'ഇന്റർവ്യൂ ജയിക്കാം', color: 'purple',
+    id: 'u4', n: 4, title: 'English for interviews', ml: 'ഇന്റർവ്യൂവിനുള്ള ഇംഗ്ലീഷ്', color: 'purple',
     nodes: [
+      { id: 'u4_phrases', type: 'phrases' },
+      { id: 'strengths', type: 'lesson' },
       { id: 'why_hire', type: 'lesson' },
-      { id: 'salary_close', type: 'lesson' },
+      { id: 'role_questions', type: 'lesson' },
       { id: 'u4_review', type: 'review' },
       { id: 'mock_full', type: 'lesson' },
-      { id: 'u4_trophy', type: 'trophy' },
+    ],
+  },
+  {
+    id: 'u5', n: 5, title: 'English at your new job', ml: 'പുതിയ ജോലിയിലെ ഇംഗ്ലീഷ്', color: 'green',
+    nodes: [
+      { id: 'u5_phrases', type: 'phrases' },
+      { id: 'office_update', type: 'lesson' },
+      { id: 'office_leave', type: 'lesson' },
+      { id: 'customer_call', type: 'lesson' },
+      { id: 'u5_review', type: 'review' },
+      { id: 'u5_trophy', type: 'trophy' },
     ],
   },
 ];
 
-// ─── Question bank (single-question drills) ──────────────────
+// ─── Speaking practice: single questions by situation ────────
 const COMMON = {
-  intro: ['Tell me about yourself.', 'How would you describe yourself in three words?', 'Walk me through your resume.', 'Why did you choose this field?'],
-  experience: ['Tell me about a project you are proud of.', 'What did you do in your last job or internship?', 'What was your role in your final-year project?', 'Tell me about an achievement you are proud of.'],
-  strengths: ['What is your biggest strength?', 'What is your biggest weakness?', 'How would your friends or colleagues describe you?'],
-  behavioural: ['Tell me about a time you worked under pressure.', 'Describe a disagreement with a colleague and how you handled it.', 'Tell me about a mistake you made and what you learned.', 'How do you handle criticism?'],
-  motivation: ['Why should we hire you?', 'Why do you want to work at our company?', 'Where do you see yourself in five years?', 'Why are you leaving your current job?'],
-  closing: ['What are your salary expectations?', 'What is your notice period?', 'Are you comfortable with night shifts or relocation?', 'Do you have any questions for us?'],
+  intro: ['Tell me about yourself.', 'Where are you from?', 'What did you study?', 'What do you do in your free time?'],
+  work: ['What do you do on a normal working day?', 'What did you do last week at work or college?', 'Tell me about a project you are proud of.', 'What tools or software do you use?'],
+  calls: ['HR asks: "Is this a good time to talk?" — answer politely.', 'HR asks: "What is your notice period?"', 'HR asks: "What is your expected salary?"', 'Call HR to ask about your application status.'],
+  interview: ['What is your biggest strength?', 'What is your biggest weakness?', 'Why should we hire you?', 'Where do you see yourself in five years?', 'Do you have any questions for us?'],
+  workplace: ['Give your manager a quick update on your work.', 'Ask your manager for two days of leave.', 'Explain politely why your work is late.', 'A customer is angry about a delay. What do you say?'],
 };
 const ROLE_QS = {
-  it: ['Explain a project you built and the technologies you used.', 'How do you fix a bug you have never seen before?', 'How do you keep your technical skills up to date?'],
-  nursing: ['How would you handle a patient who refuses medication?', 'Tell me about an emergency you handled.', 'How do you manage stress during long shifts?'],
-  support: ['How would you handle an angry customer on a call?', 'How do you stay calm when you have many calls in a queue?', 'What does good customer service mean to you?'],
-  sales: ['Sell me this pen.', 'How do you handle a customer who says "it is too expensive"?', 'How do you meet a monthly target?'],
-  accounts: ['Which accounting software have you used?', 'How do you make sure there are no errors in your reports?', 'Explain GST to someone who is not from finance.'],
-  teaching: ['How do you handle a student who disturbs the class?', 'How do you make a boring topic interesting?', 'How do you help a weak student catch up?'],
-  abroad: ['Why do you want to work abroad?', 'How will you adjust to a new country and culture?', 'Are you ready to stay away from your family for long periods?'],
-  other: ['What do you know about this role?', 'Which skills from your past will help you in this job?', 'How do you learn a new task quickly?'],
+  it: 'Explain a project you built and the technology you used.',
+  nursing: 'How would you calm a patient who is scared?',
+  support: 'How would you help an angry customer on a call?',
+  sales: 'Sell me this pen.',
+  accounts: 'Which accounting software have you used, and for what?',
+  teaching: 'How do you handle a student who disturbs the class?',
+  abroad: 'Why do you want to work abroad?',
+  other: 'What do you know about the job you are applying for?',
 };
 
 export function questionBank(roleId) {
-  const role = ROLE_QS[roleId] ? roleId : 'other';
-  return areas.map((a) => ({
-    ...a,
-    questions: a.id === 'role' ? ROLE_QS[role] : COMMON[a.id],
-  }));
+  const extra = ROLE_QS[roleId] || ROLE_QS.other;
+  return areas.map((a) => ({ ...a, questions: a.id === 'work' ? [...COMMON.work, extra] : COMMON[a.id] }));
 }

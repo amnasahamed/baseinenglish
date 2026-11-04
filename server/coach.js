@@ -4,14 +4,14 @@ import { chatJson } from './openai.js';
 import { roleById, experienceLevels, areaIds } from './scenarios.js';
 
 // ─── Shared persona ──────────────────────────────────────────
-const PERSONA = `You are "Base", an interview coach for job seekers from Kerala who speak Malayalam.
-Your learners understand English but freeze, translate slowly or lose confidence when they must answer interview questions in English.
-Your ONE goal: get them ready to pass a real job interview in English — sound clear, confident and professional.
+const PERSONA = `You are "Base", a warm, patient spoken-English teacher for Malayalam speakers from Kerala who want a job or a better job.
+Your learners understand English but freeze, translate slowly or lose confidence when they must SPEAK it — in interviews, HR calls and at work.
+Your goal is to TEACH SPOKEN ENGLISH: build their confidence, fix one English habit at a time, and give them natural, professional phrases they can reuse at work and in interviews.
 
 Ground rules:
-- Play the interviewer realistically, but kindly. Ask exactly ONE interview question at a time, like a real interviewer in India would.
-- Use clear, natural professional English (CEFR B1). No rare idioms.
-- Learners may mix Malayalam words (Malayalam script or Manglish) when stuck. This is ALLOWED. Understand them and carry on.
+- Play the role in the practice situation (HR, colleague, manager, interviewer, customer) naturally and kindly. Ask exactly ONE question at a time.
+- Use clear, natural professional English (CEFR A2–B1). Short sentences. No rare idioms.
+- Learners may mix Malayalam words (Malayalam script or Manglish) when stuck. This is ENCOURAGED. Understand them and carry on.
 - Never be sarcastic, never lecture, never list many errors.`;
 
 function profileLine(user) {
@@ -22,7 +22,7 @@ function profileLine(user) {
   if (exp) bits.push(`experience: ${exp}`);
   if (user?.company) bits.push(`target company: ${user.company}`);
   if (user?.interview_date) bits.push(`real interview on ${user.interview_date}`);
-  return bits.length ? `The candidate is ${bits.join('; ')}.` : 'You do not know their target job yet — ask general interview questions.';
+  return bits.length ? `The learner is ${bits.join('; ')}. Use situations and vocabulary from this kind of job.` : 'You do not know their target job yet — keep situations general.';
 }
 
 function memoryBlock(user, summaries, topMistakes) {
@@ -40,14 +40,14 @@ function memoryBlock(user, summaries, topMistakes) {
   }
   if (user?.next_hook) lines.push(`Last time you promised to follow up on: ${user.next_hook}`);
   if (topMistakes?.length) lines.push(`English habits they are fixing: ${topMistakes.map((m) => m.label).join('; ')}`);
-  return `\nWhat you know about this candidate:\n${lines.join('\n')}`;
+  return `\nWhat you know about this learner:\n${lines.join('\n')}`;
 }
 
 // ─── 1. One interview exchange ───────────────────────────────
 const TURN_SCHEMA = {
   type: 'object',
   additionalProperties: false,
-  required: ['meaning', 'lifeline_words', 'correction', 'question_area', 'rating', 'tip_en', 'tip_ml', 'stronger_answer', 'praise', 'reply', 'conversation_complete', 'learned'],
+  required: ['meaning', 'lifeline_words', 'correction', 'question_area', 'rating', 'phrase_en', 'phrase_ml', 'natural_version', 'praise', 'reply', 'conversation_complete', 'learned'],
   properties: {
     meaning: { type: 'string', description: 'What the candidate meant, in one or two natural English sentences.' },
     lifeline_words: {
@@ -78,11 +78,11 @@ const TURN_SCHEMA = {
         },
       ],
     },
-    question_area: { type: 'string', enum: [...areaIds, 'other'], description: 'Which interview area the question they just answered belongs to.' },
-    rating: { type: 'integer', enum: [1, 2, 3], description: 'How good this answer is FOR AN INTERVIEW (content, structure, confidence — not accent): 1 = needs work, 2 = good, 3 = interview-ready.' },
-    tip_en: { type: 'string', description: 'ONE practical interview tip about the CONTENT of this answer (max 18 words), e.g. "Add one result with a number — like how many users or how much time you saved."' },
-    tip_ml: { type: 'string', description: 'The same tip in one short line of simple Malayalam (script).' },
-    stronger_answer: { type: 'string', description: 'A stronger interview answer to the same question, using THEIR facts (never invent jobs, companies, degrees or numbers — use [placeholders] like [number] if a detail is missing). Natural spoken English, 2–4 sentences, max 70 words.' },
+    question_area: { type: 'string', enum: [...areaIds, 'other'], description: 'Which speaking situation this answer belongs to: intro (introducing yourself), work (talking about work/studies), calls (phone & HR calls), interview (interview answers), workplace (English at work).' },
+    rating: { type: 'integer', enum: [1, 2, 3], description: 'How their SPOKEN ENGLISH sounded in this answer (clarity, grammar, natural phrasing — not accent, not content): 1 = understandable but needs work, 2 = clear, 3 = natural & professional.' },
+    phrase_en: { type: 'string', description: 'ONE useful, natural English phrase (3–10 words) they could have used in this answer and can reuse at work or in interviews, e.g. "I was responsible for …", "Could you please repeat that?", "I look forward to …". Pick something slightly above their level.' },
+    phrase_ml: { type: 'string', description: 'What that phrase means / when to use it, in one short line of simple Malayalam (script).' },
+    natural_version: { type: 'string', description: 'Their WHOLE answer said in natural, professional spoken English — same meaning and facts, nothing invented (use [placeholders] if a detail is missing). 1–4 short sentences, max 60 words.' },
     praise: { type: 'string', description: 'A short, specific, genuine encouragement (max 10 words).' },
     reply: { type: 'string', description: 'Your next line AS THE INTERVIEWER: a brief natural reaction + ONE next interview question. Max 2 short sentences. If conversation_complete, a polite interviewer-style closing line instead.' },
     conversation_complete: { type: 'boolean' },
@@ -93,19 +93,19 @@ const TURN_SCHEMA = {
 const TURN_RULES = `How to respond to each answer:
 1. Understand it fully, including Malayalam words.
 2. "lifeline_words": each Malayalam/Manglish word they used, with natural English. Ignore names of places, people, colleges, companies.
-3. "correction": the single most important ENGLISH fix — prefer habits that sound unprofessional in interviews and are typical of Malayalam speakers:
-   "myself Anjali" / "I am having 2 years experience" / "working since 2 years" / "discuss about" / "I am belonging to" / "my native is" / "what is your good name" / "I did my graduation" (fine) vs "I have completed my graduation in 2021" (fine) / did + past verb / missing articles / "I will tell after".
+3. "correction": the single most important English fix — prefer habits typical of Malayalam speakers that sound unprofessional at work:
+   "myself Anjali" / "I am having 2 years experience" / "working since 2 years" / "discuss about" / "revert back" / "I am belonging to" / "my native is" / "I will tell after" / "today morning" / "what is your good name" / did + past verb / missing articles / wrong tense / question word order / plural-singular / prepositions.
    If they used a Malayalam word and the English is otherwise fine, correct to the full sentence with the English word (kind "word", key "word:<english>").
-   If the English is already natural and professional, set correction to null. Don't nitpick. Clear Indian English is fine. Ignore speech-recognition noise.
-4. Interview coaching (separate from English): rate the answer (1–3) like a real interviewer would. Give ONE tip on content/structure: e.g. start with a one-line summary, add a concrete example or a number, use situation → action → result, connect to the job, don't say "I have no experience" (talk about projects/internships instead), keep a weakness honest + what you're doing about it, never say negative things about a past employer, give a salary range with a reason.
-5. "stronger_answer": rewrite their answer as a confident, professional interview answer using only their facts.
-6. "reply": stay in role as the interviewer, react briefly and naturally to their CONTENT, then ask the next question for this round. If the answer was very short, ask a follow-up that helps them say more.
+   If the English is already natural, set correction to null. Don't nitpick. Clear Indian English is fine. Ignore speech-recognition noise.
+4. The explanation is ONE line of simple, kind Malayalam a 12th-standard student understands.
+5. "rating" is about their English only. "phrase_en" teaches one reusable professional phrase. "natural_version" shows how a confident speaker would say the same thing.
+6. "reply": stay in your role, react briefly to their CONTENT (not their grammar), then ask ONE next question. Use the English word for anything they said in Malayalam so they hear it.
 7. Set conversation_complete=true only when told it is the final turn.`;
 
 export async function coachTurn({ scenario, user, summaries, topMistakes, history, transcript, turnNumber, finalTurn }) {
   const system = `${PERSONA}
 
-Interview round: ${scenario.title}. You are ${scenario.role}.
+Speaking practice: ${scenario.title}. You are ${scenario.role}.
 ${scenario.brief}
 ${memoryBlock(user, summaries, topMistakes)}
 
@@ -114,7 +114,7 @@ ${TURN_RULES}`;
   const messages = history.map((m) => ({ role: m.role === 'partner' ? 'assistant' : 'user', content: m.text }));
   messages.push({
     role: 'user',
-    content: `[Candidate answer ${turnNumber} of ~${scenario.maxTurns}${finalTurn ? ' — FINAL TURN: close the interview politely, conversation_complete=true' : ''}]\n${transcript}`,
+    content: `[Learner answer ${turnNumber} of ~${scenario.maxTurns}${finalTurn ? ' — FINAL TURN: close the conversation warmly, conversation_complete=true' : ''}]\n${transcript}`,
   });
 
   return chatJson({
@@ -142,7 +142,7 @@ Scenario: You are ${scenario.role}.
 ${scenario.brief}
 ${memoryBlock(user, summaries, topMistakes)}
 
-Write your FIRST line to start this interview round. As the interviewer, greet them (by name if you know it), and ask the first question of this round, tailored to their target job. If you promised a follow-up, you may mention it in a few words. Max 2 short sentences.`;
+Write your FIRST line to start this speaking practice. Stay in your role, greet them (by name if you know it), and ask the first question, tailored to their kind of job. If you promised a follow-up, you may mention it in a few words. Max 2 short sentences.`;
   const r = await chatJson({
     system,
     messages: [{ role: 'user', content: 'Start the conversation.' }],
@@ -167,11 +167,11 @@ const SUMMARY_SCHEMA = {
     facts: { type: 'array', items: { type: 'string' }, description: 'Up to 4 other short personal facts worth remembering.' },
     next_hook: {
       type: 'string',
-      description: 'ONE short teaser (max 12 words, English) for the next practice, about the interview area to work on next, e.g. "Tomorrow: let us make your strengths answer sound confident."',
+      description: 'ONE short teaser (max 12 words, English) for the next lesson, e.g. "Tomorrow: let us practise your HR phone call."',
     },
     coach_note_ml: {
       type: 'string',
-      description: 'A warm 1–2 sentence closing note to the candidate, in simple Malayalam (Malayalam script) mixed with a little English: one thing that will impress an interviewer, and the one thing to improve before the interview.',
+      description: 'A warm 1–2 sentence closing note in simple Malayalam (Malayalam script) mixed with a little English: praise one thing about their English, and name the one habit to watch.',
     },
   },
 };
@@ -180,7 +180,7 @@ export async function summarizeSession({ scenario, user, history, mistakes }) {
   const transcript = history.map((m) => `${m.role === 'partner' ? 'Partner' : 'Learner'}: ${m.text}`).join('\n');
   const system = `${PERSONA}
 
-You just finished an interview practice round (${scenario.title}). Write your memory notes and a short coaching note.
+You just finished a speaking lesson (${scenario.title}). Write your memory notes and a short teaching note.
 Known profile before this session: name=${user?.name || 'unknown'}, job=${user?.job_role || 'unknown'}, goals=${user?.goals || 'unknown'}.
 Mistakes corrected this session: ${mistakes.map((m) => m.label).join('; ') || 'none'}.`;
   return chatJson({
@@ -235,7 +235,7 @@ function mockTurn(transcript, finalTurn, history = []) {
       kind: 'phrasing',
     };
   }
-  const areasCycle = ['intro', 'experience', 'strengths', 'role', 'behavioural', 'motivation', 'closing'];
+  const areasCycle = ['intro', 'work', 'calls', 'interview', 'workplace'];
   const n = history.filter((m) => m.role === 'learner').length;
   return {
     meaning: transcript,
@@ -243,11 +243,11 @@ function mockTurn(transcript, finalTurn, history = []) {
     correction,
     question_area: areasCycle[n % areasCycle.length],
     rating: correction ? 2 : n % 2 ? 3 : 2,
-    tip_en: 'Start with a one-line summary, then add one result with a number.',
-    tip_ml: 'ആദ്യം ഒരു വരിയിൽ സംഗ്രഹം, പിന്നെ ഒരു നമ്പറോടെ ഫലം പറയൂ.',
-    stronger_answer: 'I am a software tester with two years of experience at TCS. I test web applications and write automation scripts, and last year I helped reduce release bugs by [number] percent.',
+    phrase_en: 'I was responsible for …',
+    phrase_ml: 'ഒരു ജോലി നിങ്ങളുടെ ചുമതലയായിരുന്നു എന്ന് പറയാൻ.',
+    natural_version: "I'm a software tester with two years of experience at TCS. I test web applications and write automation scripts.",
     praise: 'Nice — you kept going!',
-    reply: finalTurn ? 'Thank you, that is all from our side. We will get back to you soon.' : 'That sounds good. Can you tell me a bit more about that?',
+    reply: finalTurn ? 'Thank you, that was great. Well done today!' : 'That sounds good. Can you tell me a bit more about that?',
     conversation_complete: !!finalTurn,
     learned: [],
   };
@@ -267,7 +267,7 @@ ${memoryBlock(user, summaries, topMistakes)}
 
 Write ONE short, warm WhatsApp message from Base to this learner, like a friend checking in — not marketing.
 - If you remember something specific (an interview, a meeting, a trip, a "function"), ask how it went or wish them luck.
-- Otherwise invite them to a quick 5-minute interview practice. If their interview date is close, mention how many days are left and encourage them.
+- Otherwise invite them to a quick 5-minute English speaking practice. If they have an interview date coming up, mention it and encourage them.
 - Their current streak is ${streak} day(s); mention it only if it is 2 or more.
 - Simple English. You may add ONE short Malayalam phrase in Malayalam script. Max 240 characters. No links, no hashtags, at most one emoji.`;
   const r = await chatJson({

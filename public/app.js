@@ -488,6 +488,8 @@ const routes = [
     renderJobPicker(() => go('#/'), { title: 'Your target job', cta: 'Save' });
   }],
   [/^#\/answers$/, renderAnswers],
+  [/^#\/learn\/(\w+)$/, renderPhraseLesson],
+  [/^#\/phrasebook$/, renderPhrasebook],
   [/^#\/questions$/, renderQuestions],
   [/^#\/progress$/, renderProgress],
   [/^#\/talk\/(\w+)$/, renderTalk],
@@ -643,7 +645,7 @@ async function renderBadges() {
 const mascot = (size = 'md', mood = '') =>
   `<span class="mascot m-${size} ${mood}" aria-hidden="true"><span class="m-leaf"><i></i><i></i></span><span class="m-body"><span class="eyes"><i></i><i></i></span><span class="cheeks"><i></i><i></i></span><span class="smile"></span></span></span>`;
 
-const NODE_ICON = { lesson: () => I.mic(30), review: () => I.bolt(30), chest: () => I.chest(32), trophy: () => I.trophy(32) };
+const NODE_ICON = { phrases: () => I.book(30), lesson: () => I.mic(30), review: () => I.bolt(30), chest: () => I.chest(32), trophy: () => I.trophy(32) };
 
 // ─── Bottom tab bar ──────────────────────────────────────────
 const TABS = [
@@ -690,35 +692,35 @@ function renderWelcome() {
   $app.innerHTML = '';
   const el = h(`<section class="welcome">
     <div class="w-sky"><span class="w-sun"></span><span class="w-wave w1"></span><span class="w-wave w2"></span></div>
-    <div class="w-hero">${mascot('xl', 'wave')}<div class="w-bubble">Hi! I'm Base, your interview coach.<br/>Let's get you job-ready.</div></div>
-    <h1 class="ml w-title">Interview-ൽ English-ൽ<br/>സംസാരിക്കാൻ <span class="squiggle">പേടി${SQUIGGLE}</span>യുണ്ടോ?</h1>
+    <div class="w-hero">${mascot('xl', 'wave')}<div class="w-bubble">Hi! I'm Base, your English teacher.<br/>Let's learn the English you need for a good job.</div></div>
+    <h1 class="ml w-title">നല്ല ജോലിക്ക്<br/>നല്ല <span class="squiggle">English${SQUIGGLE}</span> പഠിക്കാം</h1>
     <ul class="w-points">
-      <li>${I.briefcase(18)}<span>Practise real interview questions for <b>your</b> job</span></li>
-      <li>${I.check(16)}<span>Get a stronger answer + one English fix, explained in Malayalam</span></li>
+      <li>${I.book(18)}<span>Learn useful English for interviews, HR calls and work</span></li>
+      <li>${I.mic(18)}<span>Speak it out loud — one clear fix at a time, explained in Malayalam</span></li>
       <li>${I.buoy(18)}<span class="ml">വാക്ക് കിട്ടിയില്ലെങ്കിൽ മലയാളത്തിൽ പറയാം</span></li>
     </ul>
     <div class="w-cta">
-      <button class="b3d green block" data-start>Start my interview prep</button>
+      <button class="b3d green block" data-start>Start learning</button>
       <a class="b3d ghost block" href="#/login">I already have an account</a>
     </div>
   </section>`);
   el.querySelector('[data-start]').addEventListener('click', () => {
     unlockAudio();
     sfx.tap();
-    renderJobPicker(() => go('#/talk/intro_yourself'));
+    renderJobPicker(() => go('#/learn/u1_phrases'));
   });
   $app.append(el);
 }
 
 /** One quick step: which job + experience (+ optional interview date). Skippable. */
-function renderJobPicker(done, { title = 'What job are you preparing for?', cta = 'Continue' } = {}) {
+function renderJobPicker(done, { title = 'What kind of job do you want?', cta = 'Continue' } = {}) {
   const u = state.me?.user || {};
   let role = u.targetRole || '';
   let exp = u.experience || '';
   const roles = state.meta?.roles || [];
   $app.innerHTML = '';
   const el = h(`<section class="picker">
-    <div class="picker-head">${mascot('md', 'look')}<div class="w-bubble small">So I can ask the questions <b>your</b> interviewer will ask.</div></div>
+    <div class="picker-head">${mascot('md', 'look')}<div class="w-bubble small">So I can teach you the English <b>your</b> job needs.</div></div>
     <h1>${esc(title)}</h1>
     <div class="role-grid" role="radiogroup" aria-label="Target job">${roles
       .map((r) => `<button type="button" role="radio" class="role-opt ${r.id === role ? 'on' : ''}" aria-checked="${r.id === role}" data-r="${r.id}"><b>${esc(r.label)}</b><span class="ml">${esc(r.ml)}</span></button>`)
@@ -727,7 +729,7 @@ function renderJobPicker(done, { title = 'What job are you preparing for?', cta 
     <div class="exp-row" role="radiogroup" aria-label="Experience">${(state.meta?.experienceLevels || [])
       .map((e) => `<button type="button" role="radio" class="chip ${e.id === exp ? 'on' : ''}" aria-checked="${e.id === exp}" data-e="${e.id}">${esc(e.label)}</button>`)
       .join('')}</div>
-    <label class="lbl" for="idate">Interview date <span class="small">(optional — we'll count down with you)</span></label>
+    <label class="lbl" for="idate">Got an interview coming up? <span class="small">(optional)</span></label>
     <input class="input" type="date" id="idate" value="${esc(u.interviewDate || '')}" />
     <label class="lbl" for="icomp">Company <span class="small">(optional)</span></label>
     <input class="input" id="icomp" value="${esc(u.company || '')}" placeholder="e.g. Infosys, Aster Hospitals" autocomplete="organization" />
@@ -774,7 +776,7 @@ const ZIG = [0, 56, 84, 56, 0, -56, -84, -56];
 function readinessRing(score, size = 76) {
   const r = size / 2 - 7;
   const C = 2 * Math.PI * r;
-  return `<span class="r-ring" style="width:${size}px;height:${size}px" role="img" aria-label="Interview readiness ${score} percent">
+  return `<span class="r-ring" style="width:${size}px;height:${size}px" role="img" aria-label="Job-ready English ${score} percent">
     <svg width="${size}" height="${size}" viewBox="0 0 ${size} ${size}" aria-hidden="true"><circle cx="${size / 2}" cy="${size / 2}" r="${r}" fill="none" stroke="rgba(255,255,255,.25)" stroke-width="8"/>
     <circle cx="${size / 2}" cy="${size / 2}" r="${r}" fill="none" stroke="#F2B33D" stroke-width="8" stroke-linecap="round" stroke-dasharray="${C}" stroke-dashoffset="${C * (1 - score / 100)}" stroke-opacity="${score ? 1 : 0}" transform="rotate(-90 ${size / 2} ${size / 2})" class="ring-arc"/></svg>
     <b>${score}<small>%</small></b></span>`;
@@ -783,12 +785,12 @@ function readinessRing(score, size = 76) {
 function readinessCard(me) {
   const u = me.user;
   const d = u.daysToInterview;
-  const when = d === null || d < 0 ? '' : d === 0 ? 'Your interview is <b>today</b> — you’ve got this!' : `Interview in <b>${d} day${d === 1 ? '' : 's'}</b>`;
+  const when = d === null || d < 0 ? '' : d === 0 ? 'Interview <b>today</b> — you’ve got this!' : `Interview in <b>${d} day${d === 1 ? '' : 's'}</b>`;
   const el = h(`<a class="ready-card" href="#/progress">
     ${readinessRing(me.readiness?.score || 0)}
-    <span class="rc-txt"><span class="rc-k">INTERVIEW READINESS</span>
-      <b>${u.targetRoleLabel ? esc(u.targetRoleLabel) : 'Your interview'}</b>
-      <span class="rc-s">${when || (u.targetRoleLabel ? 'Practise every area to reach 100%' : 'Tap to set your job & interview date')}</span></span>
+    <span class="rc-txt"><span class="rc-k">JOB-READY ENGLISH</span>
+      <b>${u.targetRoleLabel ? `English for ${esc(u.targetRoleLabel)}` : 'Your job English'}</b>
+      <span class="rc-s">${when || (u.targetRoleLabel ? 'Speak in every situation to reach 100%' : 'Tap to choose your kind of job')}</span></span>
   </a>`);
   if (!u.targetRoleLabel) {
     el.setAttribute('href', '#/job');
@@ -800,7 +802,8 @@ async function renderLearn() {
   state.welcome = false;
   if (!state.me) $app.innerHTML = `<div class="skel" aria-hidden="true"><div class="sk" style="height:44px"></div><div class="sk" style="height:96px;margin-top:20px;border-radius:24px"></div><div class="sk" style="height:84px;width:84px;border-radius:50%;margin:40px auto 0"></div></div>`;
   const [me, path] = await Promise.all([loadMe(), api('/path')]);
-  if (me.user.isGuest && me.stats.sessionsDone === 0) return renderWelcome();
+  const started = path.units.some((u) => u.nodes.some((n) => n.state === 'done'));
+  if (me.user.isGuest && me.stats.sessionsDone === 0 && !started) return renderWelcome();
   $app.innerHTML = '';
   $app.append(statsBar());
 
@@ -830,7 +833,7 @@ async function renderLearn() {
       const label = n.state === 'locked' ? `${n.title} (locked)` : n.title;
       const node = h(`<div class="node-row" style="--x:${x}px">
         <div class="node-wrap">
-          ${n.state === 'current' ? `<div class="start-tip">${n.id === 'mock_full' ? 'MOCK INTERVIEW' : n.type === 'lesson' ? 'START' : n.type === 'review' ? 'REVIEW' : 'OPEN'}</div>` : ''}
+          ${n.state === 'current' ? `<div class="start-tip">${n.id === 'mock_full' ? 'MOCK INTERVIEW' : n.type === 'phrases' ? 'LEARN' : n.type === 'lesson' ? 'SPEAK' : n.type === 'review' ? 'REVIEW' : 'OPEN'}</div>` : ''}
           <button class="node t-${n.type} ${n.id === 'mock_full' ? 'boss' : ''} s-${n.state} c-${u.color}" aria-label="${esc(label)}" aria-expanded="false">
             ${n.state === 'done' && n.type === 'lesson' ? I.check(30) : n.state === 'locked' && n.type === 'lesson' ? I.lock(26) : n.id === 'mock_full' ? I.briefcase(32) : NODE_ICON[n.type]()}
             ${n.runs > 1 ? `<span class="runs">×${n.runs}</span>` : ''}
@@ -843,7 +846,7 @@ async function renderLearn() {
     });
     wrap.append(list);
   }
-  wrap.append(h(`<div class="path-end">${mascot('md', 'cheer')}<p>Finished the path? Run more mock interviews from Practice until you feel ready.</p></div>`));
+  wrap.append(h(`<div class="path-end">${mascot('md', 'cheer')}<p>Finished the path? Keep speaking in Practice — and rehearse your phrasebook before the big day.</p></div>`));
   $app.append(wrap);
 
   // Bring the current step into view.
@@ -860,19 +863,22 @@ function openNodeCard(btn, n, u) {
       ? n.state === 'done'
         ? `Practise again · +${n.xp} XP`
         : `Start · +${n.xp} XP`
-      : n.type === 'review'
+      : n.type === 'phrases'
+        ? `${n.state === 'done' ? 'Learn again' : 'Start lesson'} · +${n.xp} XP`
+        : n.type === 'review'
         ? `Start review · +${n.xp} XP`
         : `Open · +${n.xp} XP`;
   const card = h(`<div class="node-card c-${locked ? 'locked' : u.color}" role="dialog" aria-label="${esc(n.title)}">
     <div class="nc-t">${esc(n.title)}</div>
-    <div class="nc-s">${locked ? 'Finish the steps above to unlock this.' : n.state === 'done' && n.type !== 'lesson' ? 'Done!' : esc(n.subtitle)}${n.partner && !locked ? ` · Base plays: ${esc(n.partner)}` : ''}</div>
-    ${locked || (n.state === 'done' && n.type !== 'lesson') ? '' : `<button class="b3d white block">${action}</button>`}
+    <div class="nc-s">${locked ? 'Finish the steps above to unlock this.' : n.state === 'done' && !['lesson', 'phrases'].includes(n.type) ? 'Done!' : esc(n.subtitle)}${n.partner && !locked ? ` · Base plays: ${esc(n.partner)}` : ''}</div>
+    ${locked || (n.state === 'done' && !['lesson', 'phrases'].includes(n.type)) ? '' : `<button class="b3d white block">${action}</button>`}
   </div>`);
   btn.setAttribute('aria-expanded', 'true');
   btn.closest('.node-row').after(card);
   card.querySelector('button')?.addEventListener('click', async () => {
     unlockAudio();
     if (n.type === 'lesson') return go(`#/talk/${n.id}`);
+    if (n.type === 'phrases') return go(`#/learn/${n.id}`);
     if (n.type === 'review') return go(`#/warmup/${n.id}`);
     const r = await api(`/path/${n.id}/complete`, { method: 'POST' }).catch((e) => toast(e.message));
     if (r) {
@@ -892,6 +898,153 @@ function openNodeCard(btn, n, u) {
   setTimeout(() => document.addEventListener('click', close, true));
 }
 
+// ─── Phrase lesson: listen → understand → say it ────────────
+async function renderPhraseLesson(nodeId) {
+  state.welcome = false;
+  if (!state.me) await loadMe();
+  const L = await api(`/phrases/${nodeId}`);
+  state.cleanup = () => {
+    document.querySelector('.fb-sheet')?.remove();
+    recorder.release();
+  };
+  let i = 0;
+  let firstTry = 0;
+  const total = L.phrases.length;
+  const show = () => {
+    document.querySelector('.fb-sheet')?.remove();
+    if (i >= total) return finish();
+    const p = L.phrases[i];
+    let attempts = 0;
+    $app.innerHTML = '';
+    const el = h(`<div class="lesson">
+      <header class="l-head"><button class="l-x" aria-label="Leave lesson">${I.close(22)}</button>
+        <div class="l-bar"><i style="width:${Math.max(4, Math.round((i / total) * 100))}%"></i></div><span class="ph-count">${i + 1}/${total}</span></header>
+      <div class="l-body">
+        <div class="l-role"><b>${esc(L.title)}</b>${I.book(14)} Listen, understand, then say it out loud</div>
+        <div class="l-scene">${mascot('lg', 'talking')}<div class="l-bubble"><button class="l-say" aria-label="Listen again">${I.speaker(22)}</button><span class="ph-en">${esc(p.en)}</span></div></div>
+        <div class="ph-card"><div class="ph-k">MEANING</div><div class="ph-ml ml">${esc(p.ml)}</div>${p.note ? `<div class="ph-note">${I.bulb(15)} ${esc(p.note)}</div>` : ''}</div>
+        <div class="fb-result" aria-live="polite"></div>
+      </div>
+      <footer class="l-foot"><div class="l-hint">Tap the mic and say the sentence</div>
+        <div class="l-microw"><span class="l-side"><button class="linkish" data-slow>Slower</button></span><button class="l-mic" aria-label="Say it">${MIC_SVG}<span class="ring"></span></button><span class="l-side" data-skipslot></span></div></footer>
+    </div>`);
+    $app.append(el);
+    const masc = el.querySelector('.mascot');
+    const play = (slow) => {
+      masc.classList.add('talking');
+      say(p.en, { slow }).then(() => masc.classList.remove('talking'));
+    };
+    el.querySelector('.l-x').addEventListener('click', () => go('#/'));
+    el.querySelector('.l-say').addEventListener('click', () => play(false));
+    el.querySelector('[data-slow]').addEventListener('click', () => play(true));
+    play(false);
+    const res = el.querySelector('.fb-result');
+    const mic = el.querySelector('.l-mic');
+    micControl(mic, {
+      async onAudio(out) {
+        sfx.send();
+        mic.disabled = true;
+        res.innerHTML = `<span class="small">Checking…</span>`;
+        let r;
+        try {
+          r = await api('/retry', { method: 'POST', form: audioForm(out, { target: p.en, context: 'phrase' }) });
+        } catch (e) {
+          res.innerHTML = '';
+          toast(e.message);
+          mic.disabled = false;
+          return;
+        }
+        attempts++;
+        if (r.pass) {
+          if (attempts === 1) firstTry++;
+          res.innerHTML = '';
+          sfx.success();
+          buzz(20);
+          masc.classList.add('cheer');
+          if (r.rewards?.xp) floatXp(r.rewards.xp, mic);
+          const sh = h(`<div class="fb-sheet good" role="dialog"><div class="fb-top"><span class="fb-ic">${I.check(26)}</span><div><div class="fb-title">${attempts === 1 ? 'Perfect!' : 'You got it!'}</div><div class="fb-sub">“${esc(r.transcript)}”</div></div></div><button class="b3d green block" data-next>Continue</button></div>`);
+          document.body.append(sh);
+          el.querySelector('.l-foot').classList.add('covered');
+          sh.querySelector('[data-next]').addEventListener('click', () => {
+            sfx.tap();
+            i++;
+            show();
+          });
+          sh.querySelector('[data-next]').focus();
+        } else {
+          sfx.soft();
+          masc.classList.remove('talking');
+          masc.classList.add('oops');
+          setTimeout(() => masc.classList.remove('oops'), 1200);
+          res.innerHTML = `<div class="fb-no shake">Almost! Listen once more and try again.${r.missing?.length ? ` Listen for: <b>${r.missing.map(esc).join(', ')}</b>` : ''}<span>We heard: “${esc(r.transcript)}”</span></div>`;
+          mic.disabled = false;
+          if (attempts >= 2 && !el.querySelector('[data-skip]')) {
+            const sk = h(`<button class="linkish" data-skip>Skip</button>`);
+            sk.addEventListener('click', () => {
+              i++;
+              show();
+            });
+            el.querySelector('[data-skipslot]').append(sk);
+          }
+        }
+      },
+    });
+  };
+  const finish = async () => {
+    const r = await api(`/path/${nodeId}/complete`, { method: 'POST' }).catch(() => null);
+    await loadMe().catch(() => {});
+    $app.innerHTML = '';
+    const el = h(`<section class="done-screen">
+      <div class="burst">${mascot('xl', 'cheer')}</div>
+      <h1 class="center">Lesson complete!</h1>
+      <p class="center done-sub">You learned ${total} new sentences — ${firstTry} right on the first try. Now use them in a real conversation.</p>
+      <div class="tiles"><div class="tile3 gold"><div class="t-k">XP</div><div class="t-v">${I.bolt(20)}<span>${r?.gained || 0}</span></div></div>
+      <div class="tile3 green"><div class="t-k">SENTENCES</div><div class="t-v">${I.book(18)}<span>${total}</span></div></div>
+      <div class="tile3 blue"><div class="t-k">FIRST TRY</div><div class="t-v">${I.target(18)}<span>${firstTry}/${total}</span></div></div></div>
+      <a class="b3d white block" href="#/phrasebook">${I.book(18)} Open my phrasebook</a>
+    </section>`);
+    const foot = h(`<div class="done-foot"><button class="b3d green block">Continue</button></div>`);
+    foot.querySelector('button').addEventListener('click', () => go('#/'));
+    $app.append(el, foot);
+    sfx.level();
+    if (r?.gained) celebrate(`+${r.gained} XP`, 'പുതിയ വാചകങ്ങൾ പഠിച്ചു!');
+  };
+  show();
+}
+
+// ─── Phrasebook ──────────────────────────────────────────────
+async function renderPhrasebook() {
+  state.welcome = false;
+  if (!state.me) await loadMe();
+  const r = await api('/phrasebook');
+  $app.innerHTML = '';
+  $app.append(topbar({ back: true }));
+  $app.append(h(`<h1>Phrasebook</h1>`), h(`<p class="lead">Useful English for your job. Tap any sentence to hear it.</p>`));
+  const speak1 = (b, t) => b.addEventListener('click', () => {
+    unlockAudio();
+    say(t, { slow: true });
+  });
+  if (r.learned.length) {
+    const sec = h(`<section class="pb-sec"><h2>Learned in your conversations</h2></section>`);
+    for (const p of r.learned) {
+      const b = h(`<button class="pb-item">${I.speaker(18)}<span><b>${esc(p.en)}</b>${p.ml ? `<span class="ml">${esc(p.ml)}</span>` : ''}</span></button>`);
+      speak1(b, p.en);
+      sec.append(b);
+    }
+    $app.append(sec);
+  }
+  for (const l of r.lessons) {
+    const sec = h(`<section class="pb-sec"><h2>${esc(l.title)}</h2></section>`);
+    for (const p of l.phrases) {
+      const b = h(`<button class="pb-item">${I.speaker(18)}<span><b>${esc(p.en)}</b><span class="ml">${esc(p.ml)}</span></span></button>`);
+      speak1(b, p.en);
+      sec.append(b);
+    }
+    $app.append(sec);
+  }
+  if (!r.learned.length && !r.lessons.length) $app.append(emptyState(I.book(36), 'Empty for now', 'Start your first lesson to fill your phrasebook.', `<a class="b3d green" href="#/">Start learning</a>`));
+}
+
 // ─── Practice tab ────────────────────────────────────────────
 async function renderPractice() {
   state.welcome = false;
@@ -900,16 +1053,19 @@ async function renderPractice() {
   $app.append(statsBar());
   $app.append(h(`<h1>Practice</h1>`));
   const mockUnlocked = path.units.flatMap((u) => u.nodes).find((n) => n.id === 'mock_full')?.state !== 'locked';
-  const mock = h(`<button class="big-card mock ${mockUnlocked ? '' : 'locked'}"><span class="bc-ic">${I.briefcase(28)}</span><span><b>Full mock interview</b><span>${mockUnlocked ? '8 questions, start to finish · ~10 min' : 'Unlocks at the end of your path — or try a single question below'}</span></span><span class="go">${mockUnlocked ? I.chev(22) : I.lock(20)}</span></button>`);
+  const mock = h(`<button class="big-card mock ${mockUnlocked ? '' : 'locked'}"><span class="bc-ic">${I.briefcase(28)}</span><span><b>Full mock interview</b><span>${mockUnlocked ? 'Use all your English in one 10-minute interview' : 'Unlocks in Unit 4 — practise single questions below meanwhile'}</span></span><span class="go">${mockUnlocked ? I.chev(22) : I.lock(20)}</span></button>`);
   if (mockUnlocked) mock.addEventListener('click', () => go('#/talk/mock_full'));
   $app.append(mock);
   $app.append(
-    h(`<a class="big-card white" href="#/questions"><span class="bc-ic" style="background:var(--sky-l);color:var(--sky-d)">${I.chat(26)}</span><span><b>Question bank</b><span>Practise any single interview question${me.user.targetRoleLabel ? ` · ${esc(me.user.targetRoleLabel)}` : ''}</span></span><span class="go">${I.chev(22)}</span></a>`),
+    h(`<a class="big-card white" href="#/questions"><span class="bc-ic" style="background:var(--sky-l);color:var(--sky-d)">${I.chat(26)}</span><span><b>Speaking practice</b><span>Answer one question out loud — interviews, HR calls, work${me.user.targetRoleLabel ? ` · ${esc(me.user.targetRoleLabel)}` : ''}</span></span><span class="go">${I.chev(22)}</span></a>`),
   );
   $app.append(
-    h(`<a class="big-card white" href="#/answers"><span class="bc-ic" style="background:var(--gold-soft);color:var(--gold-ink)">${I.star(24)}</span><span><b>My answers</b><span>Your strongest answers — rehearse them before the interview</span></span><span class="go">${I.chev(22)}</span></a>`),
+    h(`<a class="big-card white" href="#/phrasebook"><span class="bc-ic" style="background:var(--leaf-l);color:var(--leaf-d)">${I.book(26)}</span><span><b>Phrasebook</b><span>Every useful sentence you've learned, with Malayalam meaning</span></span><span class="go">${I.chev(22)}</span></a>`),
   );
-  $app.append(h(`<h2>English fixes</h2>`));
+  $app.append(
+    h(`<a class="big-card white" href="#/answers"><span class="bc-ic" style="background:var(--gold-soft);color:var(--gold-ink)">${I.star(24)}</span><span><b>My best answers</b><span>Your answers in natural English — say them until they feel easy</span></span><span class="go">${I.chev(22)}</span></a>`),
+  );
+  $app.append(h(`<h2>Fix your mistakes</h2>`));
   const pending = me.warmup.pending;
   $app.append(
     h(`<a class="big-card gold" href="#/warmup"><span class="bc-ic">${I.bolt(28)}</span><span><b>2-minute warm-up</b><span>${pending ? `${pending} of your own English mistakes` : 'No mistakes yet — answer a few questions first'}</span></span><span class="go">${I.chev(22)}</span></a>`),
@@ -917,7 +1073,7 @@ async function renderPractice() {
   $app.append(
     h(`<a class="big-card white" href="#/bank"><span class="bc-ic" style="background:var(--green-soft);color:var(--green)">${I.book(26)}</span><span><b>Mistake Bank</b><span>${me.stats.mistakesTotal - me.stats.mistakesMastered} to practise · ${me.stats.mistakesMastered} mastered</span></span><span class="go">${I.chev(22)}</span></a>`),
   );
-  $app.append(h(`<h2>Replay a round</h2>`));
+  $app.append(h(`<h2>Replay a conversation</h2>`));
   const grid = h(`<div class="free-grid"></div>`);
   for (const u of path.units) {
     for (const n of u.nodes.filter((x) => x.type === 'lesson' && x.id !== 'mock_full')) {
@@ -937,9 +1093,9 @@ async function renderQuestions() {
   const r = await api('/questions');
   $app.innerHTML = '';
   $app.append(topbar({ back: true }));
-  $app.append(h(`<h1>Question bank</h1>`));
-  $app.append(h(`<p class="lead">The questions interviewers really ask${state.me.user.targetRoleLabel ? ` for <b>${esc(state.me.user.targetRoleLabel)}</b>` : ''}. Tap one to answer it out loud.</p>`));
-  if (!state.me.user.targetRoleLabel) $app.append(h(`<a class="small" href="#/job" style="display:block;margin:-8px 0 14px">Set your target job for role-specific questions →</a>`));
+  $app.append(h(`<h1>Speaking practice</h1>`));
+  $app.append(h(`<p class="lead">Pick a question and answer it out loud. You'll get one English fix, a useful phrase and the natural way to say it.</p>`));
+  if (!state.me.user.targetRoleLabel) $app.append(h(`<a class="small" href="#/job" style="display:block;margin:-8px 0 14px">Choose your kind of job for job-specific questions →</a>`));
   for (const a of r.areas) {
     const ready = r.readiness.areas.find((x) => x.area === a.id)?.pct || 0;
     const sec = h(`<section class="q-area"><div class="qa-head"><span><b>${esc(a.label)}</b><span class="ml">${esc(a.ml)}</span></span><span class="qa-pct">${ready}%</span></div></section>`);
@@ -963,10 +1119,10 @@ async function renderAnswers() {
   const r = await api('/answers');
   $app.innerHTML = '';
   $app.append(topbar({ back: true }));
-  $app.append(h(`<h1>My answers</h1>`));
-  $app.append(h(`<p class="lead">Your strongest answer for each part of the interview, rewritten to sound confident. Listen, then say it out loud until it feels natural.</p>`));
+  $app.append(h(`<h1>My best answers</h1>`));
+  $app.append(h(`<p class="lead">Your own answers, said in natural English. Listen, then say them out loud until they feel easy — perfect before an interview.</p>`));
   if (!r.answers.length) {
-    $app.append(emptyState(I.star(36), 'No answers yet', 'Answer a few interview questions and your best answers will appear here.', `<a class="b3d green" href="#/">Start practising</a>`));
+    $app.append(emptyState(I.star(36), 'No answers yet', 'Have a few conversations and your answers in natural English will appear here.', `<a class="b3d green" href="#/">Start practising</a>`));
     return;
   }
   state.cleanup = () => recorder.release();
@@ -1028,15 +1184,15 @@ async function renderProgress() {
   const d = me.user.daysToInterview;
   $app.append(
     h(`<div class="ready-big">
-      <div class="rb-top">${readinessRing(R.score, 96)}<div><div class="rc-k">INTERVIEW READINESS</div><b>${R.score >= 80 ? 'You’re interview-ready!' : R.score >= 50 ? 'Getting there' : 'Building up'}</b>
-      <div class="rc-s">${d !== null && d >= 0 ? (d === 0 ? 'Interview today — good luck!' : `Interview in ${d} day${d === 1 ? '' : 's'}`) : `<a href="#/job">Add your interview date</a>`}</div></div></div>
+      <div class="rb-top">${readinessRing(R.score, 96)}<div><div class="rc-k">JOB-READY ENGLISH</div><b>${R.score >= 80 ? 'Ready for the job!' : R.score >= 50 ? 'Getting there' : 'Building up'}</b>
+      <div class="rc-s">${d !== null && d >= 0 ? (d === 0 ? 'Interview today — good luck!' : `Interview in ${d} day${d === 1 ? '' : 's'}`) : 'How clearly you speak in each job situation'}</div></div></div>
       <div class="areas">${R.areas
         .map((x) => {
           const a = (state.meta?.areas || []).find((y) => y.id === x.area);
           return `<div class="ar"><span class="ar-l">${esc(a?.label || x.area)}</span><span class="ar-bar"><i style="width:${x.pct}%"></i></span><span class="ar-p">${x.answers ? x.pct + '%' : '—'}</span></div>`;
         })
         .join('')}</div>
-      <a class="b3d white block" href="#/questions" style="margin-top:12px">Practise your weakest area</a>
+      <a class="b3d white block" href="#/questions" style="margin-top:12px">Practise your weakest situation</a>
     </div>`),
   );
   const L = me.level;
@@ -1055,16 +1211,16 @@ async function renderProgress() {
     $app.append(h(`<h2>Your speaking this week</h2>`));
     $app.append(
       h(`<div class="insights">
-        <div class="ins"><div class="v">${ins.wordsPerReply}</div><div class="l">words per answer</div>${trendLine(ins.wordsPerReply, ins.wordsPerReplyPrev, '')}<div class="hint">Interview answers need 40–80 words</div></div>
+        <div class="ins"><div class="v">${ins.wordsPerReply}</div><div class="l">words per answer</div>${trendLine(ins.wordsPerReply, ins.wordsPerReplyPrev, '')}<div class="hint">Longer answers = more confidence</div></div>
         <div class="ins"><div class="v">${ins.cleanReplyRate}<small>%</small></div><div class="l">answers with no English fix</div><div class="hint">${ins.replies} answers this week</div></div>
         <div class="ins"><div class="v">${ins.lifelineWords}</div><div class="l">Malayalam words used</div>${trendLine(ins.lifelineWords, ins.lifelineWordsPrev, '', true)}<div class="hint">Fewer over time = growing vocabulary</div></div>
-        <div class="ins"><div class="v">${s.minutesSpoken}</div><div class="l">minutes of answers spoken</div><div class="hint">${s.daysPracticed} days practised</div></div>
+        <div class="ins"><div class="v">${s.minutesSpoken}</div><div class="l">minutes of English spoken</div><div class="hint">${s.daysPracticed} days practised</div></div>
       </div>`),
     );
   }
   if (!me.user.isGuest) {
     $app.append(
-      h(`<a class="big-card white" href="#/invite" style="margin-top:14px"><span class="bc-ic" style="background:var(--gold-soft);color:var(--gold-ink)">${I.gift()}</span><span><b>Prepare with a friend</b><span>Invite someone job hunting — you both get free sessions</span></span><span class="go">${I.chev(22)}</span></a>`),
+      h(`<a class="big-card white" href="#/invite" style="margin-top:14px"><span class="bc-ic" style="background:var(--gold-soft);color:var(--gold-ink)">${I.gift()}</span><span><b>Learn with a friend</b><span>Invite someone looking for a job — you both get free sessions</span></span><span class="go">${I.chev(22)}</span></a>`),
     );
   }
 }
@@ -1165,7 +1321,7 @@ async function renderTalk(scenarioId) {
     answer.innerHTML = '';
     micBtn.disabled = false;
     busy = false;
-    hint.textContent = turn === 0 ? 'Tap the mic and answer like it’s the real interview.' : 'Your answer. Pauses are okay.';
+    hint.textContent = turn === 0 ? 'Tap the mic and answer. Take your time.' : 'Your turn. Pauses are okay.';
     speak(text).then(() => {
       if (handsFree && !sheet && !busy) micRef?.start();
     });
@@ -1180,7 +1336,7 @@ async function renderTalk(scenarioId) {
   try {
     const r = await api('/sessions', { method: 'POST', body: { scenarioId, question: scenarioId === 'drill' ? state.drillQuestion : undefined } });
     session = r.session;
-    roleEl.innerHTML = `<b>${esc(session.title)}</b>${I.briefcase(14)} ${scenarioId === 'drill' ? 'One question' : `Interviewer: ${esc(session.partnerLabel || 'Interviewer')}`}${state.me?.user?.targetRoleLabel ? ` · for ${esc(state.me.user.targetRoleLabel)}` : ''}`;
+    roleEl.innerHTML = `<b>${esc(session.title)}</b>${I.briefcase(14)} ${scenarioId === 'drill' ? 'One question' : `Base plays: ${esc(session.partnerLabel || 'your partner')}`}${state.me?.user?.targetRoleLabel ? ` · for ${esc(state.me.user.targetRoleLabel)}` : ''}`;
     setBar(0, session.maxTurns);
     showPartner(r.opener);
   } catch (e) {
@@ -1196,7 +1352,7 @@ async function renderTalk(scenarioId) {
   }
 
   L.querySelector('[data-exit]').addEventListener('click', () => {
-    if (turn > 0 && !confirm('Leave this interview? Your answers so far are saved.')) return;
+    if (turn > 0 && !confirm('Leave this lesson? Your progress so far is saved.')) return;
     if (turn > 0) finish();
     else go('#/');
   });
@@ -1314,20 +1470,21 @@ async function renderTalk(scenarioId) {
   }
 
   const RATING = {
-    3: { title: 'Interview-ready answer!', cls: 'good', sub: 'An interviewer would be impressed.' },
-    2: { title: 'Good answer', cls: 'good', sub: 'Solid — one tweak makes it stronger.' },
-    1: { title: 'Good start — let’s make it stronger', cls: 'fix', sub: 'Interviewers want a bit more here.' },
+    3: { title: 'Natural, professional English!', cls: 'good', sub: 'You sound confident and clear.' },
+    2: { title: 'Clear English!', cls: 'good', sub: 'Easy to understand. Here’s how to sound even more natural.' },
+    1: { title: 'Understandable — let’s polish it', cls: 'fix', sub: 'Listen to how to say it naturally.' },
   };
   function coachHtml(r) {
     const c = r.coaching || {};
     const meter = [1, 2, 3].map((n) => `<i class="${n <= (c.rating || 0) ? 'on' : ''}"></i>`).join('');
     return `
-      ${c.tip ? `<div class="fb-tip"><span class="tip-k">${I.bulb(16)} INTERVIEW TIP</span><div class="tip-en">${esc(c.tip)}</div>${c.tipMl ? `<div class="tip-ml ml">${esc(c.tipMl)}</div>` : ''}</div>` : ''}
-      ${c.stronger ? `<details class="fb-strong"><summary>${I.sparkle(16)} See a stronger answer</summary><div class="fs-body"><button class="fb-say" data-strong aria-label="Listen to the stronger answer">${I.speaker(20)}</button><span>${esc(c.stronger)}</span></div><div class="small">Saved to <b>My answers</b> — rehearse it before your interview.</div></details>` : ''}
-      <span class="rate-meter" aria-label="Answer rating ${c.rating || 0} of 3">${meter}</span>`;
+      ${c.phrase ? `<div class="fb-tip"><span class="tip-k">${I.book(15)} USEFUL PHRASE</span><div class="tip-en"><button class="fb-say sm" data-phrase aria-label="Hear the phrase">${I.speaker(16)}</button>${esc(c.phrase)}</div>${c.phraseMl ? `<div class="tip-ml ml">${esc(c.phraseMl)}</div>` : ''}</div>` : ''}
+      ${c.natural ? `<details class="fb-strong"><summary>${I.sparkle(16)} Hear it said naturally</summary><div class="fs-body"><button class="fb-say" data-strong aria-label="Listen">${I.speaker(20)}</button><span>${esc(c.natural)}</span></div><div class="small">Saved to <b>My best answers</b> and your <b>Phrasebook</b>.</div></details>` : ''}
+      <span class="rate-meter" aria-label="English rating ${c.rating || 0} of 3">${meter}</span>`;
   }
   function wireCoach(s, r) {
-    s.querySelector('[data-strong]')?.addEventListener('click', () => speak(r.coaching.stronger, { slow: true }));
+    s.querySelector('[data-strong]')?.addEventListener('click', () => speak(r.coaching.natural, { slow: true }));
+    s.querySelector('[data-phrase]')?.addEventListener('click', () => speak(r.coaching.phrase, { slow: true }));
     s.querySelector('.fb-strong')?.addEventListener('toggle', (e) => e.target.open && track('stronger_opened', null, session.id));
   }
 
@@ -1356,7 +1513,7 @@ async function renderTalk(scenarioId) {
     let attempts = 0;
     const s = makeSheet(
       'fix',
-      `<div class="fb-top"><span class="fb-ic">${I.bulb(24)}</span><div><div class="fb-title">${esc(R.title)}</div><div class="fb-sub">First, one English fix — say it out loud.</div></div>
+      `<div class="fb-top"><span class="fb-ic">${I.bulb(24)}</span><div><div class="fb-title">${esc(R.title)}</div><div class="fb-sub">One English fix — say it out loud.</div></div>
         <span class="fb"><button data-fb="1" aria-label="Explanation was clear">${I.thumb(16)}</button><button data-fb="0" aria-label="Not clear">${I.thumb(16, true)}</button></span></div>
       ${wordsHtml(r)}
       <div class="fix-box">
@@ -1393,7 +1550,7 @@ async function renderTalk(scenarioId) {
     const afterFix = (passed) => {
       s.className = 'fb-sheet good';
       s.querySelector('.fb-title').textContent = passed ? 'You said it!' : 'Saved for later';
-      s.querySelector('.fb-sub').textContent = passed ? 'Now the interview tip for this answer:' : 'It’s in your Mistake Bank. Here’s the interview tip:';
+      s.querySelector('.fb-sub').textContent = passed ? 'Now one useful phrase to learn:' : 'It’s in your Mistake Bank. Here’s a useful phrase:';
       s.querySelector('.fb-ic').innerHTML = I.check(26);
       s.querySelector('.fix-box').classList.add('done');
       s.querySelector('.fb-links')?.remove();
@@ -1489,7 +1646,7 @@ async function renderTalk(scenarioId) {
     }
     stopSpeaking();
     $app.innerHTML = '';
-    $app.append(h(`<div class="lesson-wait">${mascot('lg', 'cheer')}<p>Preparing your interview feedback…</p></div>`));
+    $app.append(h(`<div class="lesson-wait">${mascot('lg', 'cheer')}<p>Counting what you learned…</p></div>`));
     try {
       const r = await api(`/sessions/${session.id}/end`, { method: 'POST' });
       await loadMe();
@@ -1528,17 +1685,17 @@ function renderComplete(r, scenarioId, { fixes, turns }) {
     const up = r.level && lb && r.level.level > lb.level;
     const el = h(`<section class="done-screen">
       <div class="burst">${mascot('xl', 'cheer')}</div>
-      <h1 class="center">${scenarioId === 'mock_full' ? 'Mock interview done!' : scenarioId === 'drill' ? 'Question practised!' : 'Round complete!'}</h1>
+      <h1 class="center">${scenarioId === 'mock_full' ? 'Mock interview done!' : scenarioId === 'drill' ? 'Well spoken!' : 'Lesson complete!'}</h1>
       <p class="center ml done-sub">${esc(r.coachNote || 'നന്നായി സംസാരിച്ചു!')}</p>
       <div class="tiles">
         <div class="tile3 gold"><div class="t-k">TOTAL XP</div><div class="t-v">${I.bolt(20)}<span data-c="${r.xp || 0}">0</span></div></div>
         <div class="tile3 green"><div class="t-k">SPOKE FOR</div><div class="t-v">${I.mic(18)}<span>${sec >= 60 ? `${Math.floor(sec / 60)}:${String(sec % 60).padStart(2, '0')}` : `${sec}s`}</span></div></div>
-        <div class="tile3 blue"><div class="t-k">READINESS</div><div class="t-v">${I.target(18)}<span data-c="${r.readiness?.score || 0}">0</span>%</div></div>
+        <div class="tile3 blue"><div class="t-k">JOB ENGLISH</div><div class="t-v">${I.target(18)}<span data-c="${r.readiness?.score || 0}">0</span>%</div></div>
       </div>
-      ${r.report ? `<div class="report"><div class="rp-k">INTERVIEW REPORT</div>${r.report
+      ${r.report ? `<div class="report"><div class="rp-k">YOUR ENGLISH IN THIS INTERVIEW</div>${r.report
         .map((x) => {
           const a = (state.meta?.areas || []).find((y) => y.id === x.area);
-          const lbl = x.rating === 3 ? 'Interview-ready' : x.rating === 2 ? 'Good' : 'Needs work';
+          const lbl = x.rating === 3 ? 'Natural' : x.rating === 2 ? 'Clear' : 'Keep practising';
           return `<div class="rp-row"><span>${esc(a?.label || x.area)}</span><span class="rp-r r${x.rating}">${lbl}</span></div>`;
         })
         .join('')}</div>` : ''}
@@ -1611,7 +1768,7 @@ function renderComplete(r, scenarioId, { fixes, turns }) {
       const el = h(`<section class="done-screen">
         <div class="burst">${mascot('xl', 'look')}</div>
         <h1 class="center">Don't lose your progress</h1>
-        <p class="center done-sub">Save your stronger answers, your ${r.mistakes.length} English fix${r.mistakes.length === 1 ? '' : 'es'} and your readiness score — and unlock the rest of your interview prep.</p>
+        <p class="center done-sub">Save your ${r.mistakes.length} English fix${r.mistakes.length === 1 ? '' : 'es'}, your phrasebook and your progress — and unlock the next lessons.</p>
         <div class="fix-list">${r.mistakes.map((m) => `<div class="fix-line"><span class="tick">${I.check()}</span><div><div class="r">${esc(m.corrected)}</div></div></div>`).join('')}</div>
       </section>`);
       el._primary = { label: 'Save with my phone number', run: () => (sessionStorage.setItem('afterLogin', '#/'), go('#/login')) };
@@ -2021,8 +2178,8 @@ async function renderSettings() {
   $app.append(h(`<h1>Profile</h1>`));
 
   const plan = h(`<div class="card dark"><div class="kasavu"></div><div class="display" style="font-weight:700;font-size:18px;margin-top:10px">Your plan</div><p style="margin:4px 0 12px;color:#b9c8c3;font-size:14px">${
-    a.plan === 'paid' ? 'Interview pass — active' : a.canStart ? `Free trial · ${a.remaining} session${a.remaining === 1 ? '' : 's'} left` : 'Free trial finished'
-  }</p>${a.plan === 'paid' ? `<a class="btn outline" style="color:var(--cream);border-color:var(--cream)" href="${esc(state.me.upgrade.url || '#')}" target="_blank" rel="noopener">Manage subscription</a>` : `<a class="btn gold" href="#/upgrade">See the interview pass</a>`}</div>`);
+    a.plan === 'paid' ? 'Monthly pass — active' : a.canStart ? `Free trial · ${a.remaining} session${a.remaining === 1 ? '' : 's'} left` : 'Free trial finished'
+  }</p>${a.plan === 'paid' ? `<a class="btn outline" style="color:var(--cream);border-color:var(--cream)" href="${esc(state.me.upgrade.url || '#')}" target="_blank" rel="noopener">Manage subscription</a>` : `<a class="btn gold" href="#/upgrade">See the monthly pass</a>`}</div>`);
   $app.append(plan);
 
   const d = u.daysToInterview;
@@ -2094,10 +2251,10 @@ async function renderInvite() {
   const inv = await api('/invite');
   $app.innerHTML = '';
   $app.append(topbar({ back: true }));
-  const text = `I'm preparing for job interviews in English with Base — it asks real interview questions for your job and shows you a stronger answer, explained in Malayalam. Try it free: ${inv.url}`;
+  const text = `I'm learning English for my job with Base — you practise interviews, HR calls and office English out loud, and it explains every fix in Malayalam. Try it free: ${inv.url}`;
   const box = h(`<section>
     <div class="invite-art">${I.gift(44)}</div>
-    <h1 class="center">Prepare together</h1>
+    <h1 class="center">Learn together</h1>
     <p class="lead center">When a friend joins with your link, you <b>both</b> get <b>${inv.bonus} free sessions</b>.</p>
     <div class="code-box"><span class="small">Your invite link</span><span class="code">${esc(inv.url.replace(/^https?:\/\//, ''))}</span></div>
     <div class="stack" style="margin-top:14px">
@@ -2135,7 +2292,7 @@ function renderLegal(which) {
     <p class="lead">The short version.</p>
     <div class="legal">
     <h3>The service</h3><p>Base is a practice partner. It can make mistakes; it is not a certified exam or test.</p>
-    <h3>Interview pass (monthly)</h3><ul><li>Renews monthly until you cancel. Cancel any time — you keep access until the end of the month.</li><li>Includes a fair daily practice allowance.</li></ul>
+    <h3>Monthly pass</h3><ul><li>Renews monthly until you cancel. Cancel any time — you keep access until the end of the month.</li><li>Includes a fair daily practice allowance.</li></ul>
     <h3>10-day refund promise</h3><p>Not happy in the first 10 days after paying? Message us and we'll refund you in full — no questions asked.</p>
     <h3>Be kind</h3><p>Don't use Base to create harmful content or to abuse the service.</p>
     <h3>Contact</h3><p>[COMPANY NAME] · [CONTACT EMAIL / WHATSAPP]</p></div>`;
@@ -2155,15 +2312,15 @@ async function renderUpgrade() {
   }
   const s = state.me.stats;
   const card = h(`<section>
-    <h1>Get fully interview-ready</h1>
-    <p class="lead">In your free sessions you practised <b>${s.minutesSpoken} minutes</b> of interview answers and reached <b>${state.me.readiness?.score || 0}% interview readiness</b>. Keep going until you're ready for the real thing.</p>
+    <h1>Keep learning English for your career</h1>
+    <p class="lead">In your free sessions you spoke English for <b>${s.minutesSpoken} minutes</b> and reached <b>${state.me.readiness?.score || 0}% job-ready English</b>. Keep going until it feels easy.</p>
     <div class="card dark stack">
       <div class="kasavu"></div>
-      <div class="display" style="font-size:26px;font-weight:800;letter-spacing:-0.02em">Interview pass · <span style="color:var(--gold)">${esc(state.me.upgrade.price)}</span></div>
-      <div class="fix-line"><span class="tick" style="background:var(--gold);color:var(--ink)">${I.check()}</span><span>Unlimited mock interviews for your job</span></div>
-      <div class="fix-line" style="margin-top:0"><span class="tick" style="background:var(--gold);color:var(--ink)">${I.check()}</span><span>Stronger answers you can rehearse</span></div>
-      <div class="fix-line" style="margin-top:0"><span class="tick" style="background:var(--gold);color:var(--ink)">${I.check()}</span><span>A coach who remembers your background</span></div>
-      <a class="btn block gold" data-up href="${esc(state.me.upgrade.url || '#/')}" target="_blank" rel="noopener">Get the interview pass</a>
+      <div class="display" style="font-size:26px;font-weight:800;letter-spacing:-0.02em">Monthly pass · <span style="color:var(--gold)">${esc(state.me.upgrade.price)}</span></div>
+      <div class="fix-line"><span class="tick" style="background:var(--gold);color:var(--ink)">${I.check()}</span><span>All lessons: interviews, HR calls & English at work</span></div>
+      <div class="fix-line" style="margin-top:0"><span class="tick" style="background:var(--gold);color:var(--ink)">${I.check()}</span><span>Your phrasebook, best answers & mistake warm-ups</span></div>
+      <div class="fix-line" style="margin-top:0"><span class="tick" style="background:var(--gold);color:var(--ink)">${I.check()}</span><span>A teacher who remembers you and your job</span></div>
+      <a class="btn block gold" data-up href="${esc(state.me.upgrade.url || '#/')}" target="_blank" rel="noopener">Get the monthly pass</a>
     </div>
     <p class="foot-note">Less than a cup of coffee a week · <a href="#/terms">10-day refund promise</a></p>
   </section>`);
@@ -2196,7 +2353,7 @@ async function shareProgress(r, words) {
   x.fillText('base.', 90, 120);
   x.font = '800 34px Manrope, sans-serif';
   x.fillStyle = '#CFE4DC';
-  x.fillText('I PRACTISED INTERVIEW ANSWERS FOR', 90, 300);
+  x.fillText('I SPOKE ENGLISH OUT LOUD FOR', 90, 300);
   const sec = Math.round(r.secondsSpoken);
   x.fillStyle = '#FBF6EC';
   x.font = '800 260px "Bricolage Grotesque", sans-serif';
@@ -2220,12 +2377,12 @@ async function shareProgress(r, words) {
   x.fill();
   x.fillStyle = '#14211E';
   x.font = '800 54px "Bricolage Grotesque", sans-serif';
-  x.fillText('Get interview-ready — free', 110, 1170);
+  x.fillText('Learn English for your job — free', 110, 1170);
   x.font = '700 38px Manrope, sans-serif';
   x.fillText(url.replace(/^https?:\/\//, ''), 110, 1235);
   const blob = await new Promise((res) => c.toBlob(res, 'image/png'));
   const file = new File([blob], 'my-english-progress.png', { type: 'image/png' });
-  const text = `I practised my interview answers in English for ${big} ${sec >= 60 ? 'min' : 'sec'} today with Base! Get interview-ready with me: ${url}`;
+  const text = `I spoke English for ${big} ${sec >= 60 ? 'min' : 'sec'} today with Base — learning English for a better job! Learn with me: ${url}`;
   try {
     if (navigator.canShare?.({ files: [file] })) return await navigator.share({ files: [file], text });
     if (navigator.share) return await navigator.share({ text, url });

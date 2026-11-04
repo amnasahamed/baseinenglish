@@ -926,3 +926,20 @@ body.has-tabs #toast { bottom: calc(96px + env(safe-area-inset-bottom)); }
 .ans-act { display: flex; gap: 10px; }
 .ans-act .b3d { flex: 1; min-height: 48px; font-size: 14px; }
 .ans-act .b3d.recording { --face: var(--rec); --edge: #a8382b; --fg: #fff; }
+
+/* ══════════ Phrase lessons & phrasebook ══════════ */
+.ph-count { font-family: var(--display); font-weight: 800; color: var(--muted); font-size: 14px; }
+.ph-en { font-family: var(--display); font-weight: 700; font-size: 21px; line-height: 1.35; }
+.ph-card { background: #fff; border: 2px solid var(--stone); border-radius: 20px; padding: 14px 16px; box-shadow: 0 3px 0 var(--stone); }
+.ph-k { font-size: 11px; font-weight: 800; letter-spacing: 0.1em; color: var(--leaf-d); }
+.ph-ml { font-size: 18px; line-height: 1.5; margin-top: 4px; }
+.ph-note { margin-top: 10px; font-size: 14px; color: var(--gold-ink); background: var(--gold-soft); border-radius: 12px; padding: 8px 10px; display: flex; gap: 6px; align-items: flex-start; font-weight: 600; }
+.lesson .fb-result { min-height: 10px; }
+.fb-say.sm { width: 30px; height: 30px; border-radius: 10px; margin-right: 8px; vertical-align: middle; display: inline-grid; }
+.tip-en { display: flex; align-items: center; }
+.pb-sec h2 { margin-top: 22px; }
+.pb-item { width: 100%; display: flex; gap: 12px; align-items: flex-start; text-align: left; background: #fff; border: 2px solid var(--stone); border-radius: 16px; padding: 12px 14px; margin-bottom: 8px; box-shadow: 0 3px 0 var(--stone); color: var(--ink); }
+.pb-item svg { color: var(--sky); margin-top: 2px; }
+.pb-item b { display: block; font-size: 16px; }
+.pb-item .ml { display: block; font-size: 14px; color: var(--ink-2); margin-top: 2px; }
+.pb-item:active { transform: translateY(3px); box-shadow: none; }
