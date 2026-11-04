@@ -88,17 +88,17 @@ All the teaching logic (persona, the "one fix" rules, the list of common Malayal
 - **Share my progress:** generates a branded 1080×1350 image for WhatsApp status or Instagram stories, with the learner's invite link.
 - **Settings:** daily goal, reminders, profile, plan, help, privacy policy, terms and the 10-day refund promise, log out, and delete account and data. Fill in the `[COMPANY NAME]` / `[CONTACT]` placeholders in `public/app.js` (`renderLegal`) before launch.
 
-## App structure (v3)
+## App structure (v4 — your career story)
 
-The app is built around the same ideas as the best language apps, with our own look and content:
+The learner is the main character of their own job hunt, in the kind of job they picked, with their name and target company (or a realistic fictional one).
 
-- **Welcome:** the mascot (Base, a little green friend with a coconut-leaf sprout) says hi. One button starts the first lesson; there's no signup.
-- **Learn tab (the path):** the 5 units above. Each starts with a phrase lesson (listen → meaning in Malayalam → say it), then speaking lessons, a review of your own mistakes and a reward. Unit 4 ends with a full mock interview.
-- **Lesson:** one exchange per screen. The mascot asks (and talks, thinks or cheers), you answer with the big 3D mic, and feedback slides up from the bottom: green "Nice!" or gold "Almost! Say it like this" with the Malayalam explanation and a **Say it out loud** button. You continue only after that. A progress bar sits on top, with a combo flame and hands-free mode.
-- **Lesson complete:** XP, speaking time and no-fix replies count up, the level bar fills, and badges pop in. Next comes the streak screen (first lesson of the day), then saving progress (guests) or tomorrow's teaser plus daily quests.
-- **Practice tab:** full mock interview, **Speaking practice** (answer any single question, by situation), **Phrasebook**, **My best answers**, mistake warm-up, Mistake Bank, and replaying any conversation.
-- **Progress tab:** Job-ready English by situation (and the countdown if an interview date is set), level (Starter → Clear Speaker → Call Ready → Interview Ready → Office Ready → … → Fluent Professional), streak and daily goal, quests, and weekly insights.
-- **Profile tab:** plan, daily goal, reminders, sounds, about you, help and legal.
+- **Story tab (home):** "Anjali's career story". A career track (Applied → Shortlisted → HR call → Interview → Offer → First week) and today's **episode** as a big card: *"Episode 4 · The HR call — Priya from BrightCall Services HR is calling about your application."* There are 13 episodes in 4 chapters: the job hunt begins, getting the call, the interview, your first week. They are defined in `server/story.js`.
+- **Episodes are real moments.** Some are conversations (job fair, interview rounds, standup); some are **phone calls**, with a full-screen incoming call, then a dark call screen with live captions. On calls, feedback arrives as **"Base whispers"**: the right sentence plus a Malayalam explanation, said out loud.
+- **Every episode ends with a story beat:** an email, WhatsApp message or note ("Infosys HR: Interview invitation"), the career track moving forward, what you learned, and a teaser for the next episode. Finishing the interview chapter gives you an **offer letter**; finishing the first week gives "Welcome to the team".
+- **Daily unlock:** up to `EPISODES_PER_DAY` (default 2) **new** episodes a day. Replays and chatting with Base are unlimited, so there's always something to come back to tomorrow, but nobody is blocked from practising.
+- **Base tab, the mentor chat:** WhatsApp-style. Base opens each day with a message about your next episode, and you reply by voice note or text. Mistakes are highlighted inside your own bubble, with an inline fix card (Malayalam reason plus "say it again"). New phrases are added to your phrasebook. One thread per day.
+- **Phrases tab:** phrasebook, speaking practice, my best answers, mistake warm-up and Mistake Bank. Optional "Prep with Base" phrase lessons appear before key episodes.
+- **Me tab:** job-ready English score, level, streak, quests, weekly insights and settings.
 
 ## Habit loop (why people come back)
 

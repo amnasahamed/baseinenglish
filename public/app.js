@@ -419,6 +419,7 @@ const sfx = (() => {
     xp: () => play([[1046, 0, 0.07, { type: 'triangle', vol: 0.05 }], [1318, 0.05, 0.1, { type: 'triangle', vol: 0.05 }]]),
     level: () => play([[523, 0, 0.14], [659, 0.12, 0.14], [784, 0.24, 0.14], [1046, 0.36, 0.4, { vol: 0.14 }]]),
     soft: () => play([[392, 0, 0.12, { type: 'triangle', vol: 0.05 }]]),
+    ring: () => play([[784, 0, 0.18, { vol: 0.08 }], [988, 0.2, 0.18, { vol: 0.08 }], [784, 0.45, 0.18, { vol: 0.08 }], [988, 0.65, 0.18, { vol: 0.08 }]]),
   };
 })();
 const buzz = (p) => {
@@ -481,7 +482,11 @@ async function loadMe() {
 }
 
 const routes = [
-  [/^#?\/?$/, renderLearn],
+  [/^#?\/?$/, renderStory],
+  [/^#\/path$/, renderLearn],
+  [/^#\/base$/, renderChat],
+  [/^#\/call\/(\w+)$/, renderIncoming],
+  [/^#\/phrases$/, renderPhrasesTab],
   [/^#\/practice$/, renderPractice],
   [/^#\/job$/, async () => {
     await loadMe();
@@ -649,10 +654,10 @@ const NODE_ICON = { phrases: () => I.book(30), lesson: () => I.mic(30), review: 
 
 // ─── Bottom tab bar ──────────────────────────────────────────
 const TABS = [
-  ['#/', 'Learn', () => I.path()],
-  ['#/practice', 'Practice', () => I.bolt(24)],
-  ['#/progress', 'Progress', () => I.chart()],
-  ['#/settings', 'Profile', () => I.user()],
+  ['#/', 'Story', () => I.book(24)],
+  ['#/base', 'Base', () => I.chat(24)],
+  ['#/phrases', 'Phrases', () => I.star(22)],
+  ['#/progress', 'Me', () => I.user()],
 ];
 function setTabbar(hash) {
   document.querySelector('.tabbar')?.remove();
@@ -692,22 +697,25 @@ function renderWelcome() {
   $app.innerHTML = '';
   const el = h(`<section class="welcome">
     <div class="w-sky"><span class="w-sun"></span><span class="w-wave w1"></span><span class="w-wave w2"></span></div>
-    <div class="w-hero">${mascot('xl', 'wave')}<div class="w-bubble">Hi! I'm Base, your English teacher.<br/>Let's learn the English you need for a good job.</div></div>
+    <div class="w-hero">${mascot('xl', 'wave')}<div class="w-bubble">Hi! I'm Base, your English mentor.<br/>Your career story starts today.</div></div>
     <h1 class="ml w-title">നല്ല ജോലിക്ക്<br/>നല്ല <span class="squiggle">English${SQUIGGLE}</span> പഠിക്കാം</h1>
     <ul class="w-points">
-      <li>${I.book(18)}<span>Learn useful English for interviews, HR calls and work</span></li>
-      <li>${I.mic(18)}<span>Speak it out loud — one clear fix at a time, explained in Malayalam</span></li>
+      <li>${I.book(18)}<span>Live your own job story — job fair, HR call, interview, first week</span></li>
+      <li>${I.mic(18)}<span>Speak your way through it. I whisper the right English, explained in Malayalam</span></li>
       <li>${I.buoy(18)}<span class="ml">വാക്ക് കിട്ടിയില്ലെങ്കിൽ മലയാളത്തിൽ പറയാം</span></li>
     </ul>
     <div class="w-cta">
-      <button class="b3d green block" data-start>Start learning</button>
+      <button class="b3d green block" data-start>Start my story</button>
       <a class="b3d ghost block" href="#/login">I already have an account</a>
     </div>
   </section>`);
   el.querySelector('[data-start]').addEventListener('click', () => {
     unlockAudio();
     sfx.tap();
-    renderJobPicker(() => go('#/learn/u1_phrases'));
+    renderJobPicker(() => {
+      state.skipWelcome = true;
+      go('#/');
+    });
   });
   $app.append(el);
 }
@@ -720,7 +728,7 @@ function renderJobPicker(done, { title = 'What kind of job do you want?', cta = 
   const roles = state.meta?.roles || [];
   $app.innerHTML = '';
   const el = h(`<section class="picker">
-    <div class="picker-head">${mascot('md', 'look')}<div class="w-bubble small">So I can teach you the English <b>your</b> job needs.</div></div>
+    <div class="picker-head">${mascot('md', 'look')}<div class="w-bubble small">Your story will happen in <b>this</b> kind of job.</div></div>
     <h1>${esc(title)}</h1>
     <div class="role-grid" role="radiogroup" aria-label="Target job">${roles
       .map((r) => `<button type="button" role="radio" class="role-opt ${r.id === role ? 'on' : ''}" aria-checked="${r.id === role}" data-r="${r.id}"><b>${esc(r.label)}</b><span class="ml">${esc(r.ml)}</span></button>`)
@@ -766,7 +774,10 @@ function renderJobPicker(done, { title = 'What kind of job do you want?', cta = 
     await loadMe().catch(() => {});
     done();
   });
-  el.querySelector('[data-skip]').addEventListener('click', done);
+  el.querySelector('[data-skip]').addEventListener('click', () => {
+    state.skipWelcome = true;
+    done();
+  });
   $app.append(el);
 }
 
@@ -1045,6 +1056,388 @@ async function renderPhrasebook() {
   if (!r.learned.length && !r.lessons.length) $app.append(emptyState(I.book(36), 'Empty for now', 'Start your first lesson to fill your phrasebook.', `<a class="b3d green" href="#/">Start learning</a>`));
 }
 
+// ═══════════════════════════════════════════════════════════════
+//  Career story: home, Base chat, phone calls, episode endings
+// ═══════════════════════════════════════════════════════════════
+const PHONE_SVG = (s = 24, fill = 'currentColor') =>
+  `<svg width="${s}" height="${s}" viewBox="0 0 24 24" fill="${fill}" aria-hidden="true"><path d="M22 16.9v3a2 2 0 0 1-2.2 2 19.8 19.8 0 0 1-8.6-3.1 19.5 19.5 0 0 1-6-6A19.8 19.8 0 0 1 2.1 4.2 2 2 0 0 1 4.1 2h3a2 2 0 0 1 2 1.7c.1.9.4 1.8.7 2.7a2 2 0 0 1-.5 2.1L8 9.8a16 16 0 0 0 6 6l1.3-1.3a2 2 0 0 1 2.1-.4c.9.3 1.8.6 2.7.7a2 2 0 0 1 1.7 2z"/></svg>`;
+const MAIL_SVG = (s = 22) => svg('<rect x="3" y="5" width="18" height="14" rx="2"/><path d="M3 7l9 6 9-6"/>', { size: s });
+const QUOTE_SVG = (s = 22) => svg('<path d="M7 8h4v6H5v-2a4 4 0 0 1 2-4zM15 8h4v6h-6v-2a4 4 0 0 1 2-4z"/>', { size: s });
+
+async function loadStory() {
+  state.story = await api('/story');
+  return state.story;
+}
+const allEpisodes = () => (state.story?.chapters || []).flatMap((c) => c.episodes);
+
+function careerTrack(st, { small = false } = {}) {
+  const n = st.stages.length;
+  const pct = (st.stage / (n - 1)) * 84;
+  return `<div class="track ${small ? 'sm' : ''}" role="img" aria-label="Career progress: ${esc(st.stages[st.stage])}">
+    <span class="tr-line"></span><span class="tr-fill" style="width:${pct}%"></span>
+    ${st.stages.map((label, i) => `<span class="tr-step ${i < st.stage ? 'done' : i === st.stage ? 'now' : ''}"><i>${i < st.stage ? I.check(11) : ''}</i><b>${esc(label)}</b></span>`).join('')}
+  </div>`;
+}
+
+function outcomeCard(o) {
+  const icon = o.kind === 'mail' ? MAIL_SVG() : o.kind === 'whatsapp' ? I.chat(22) : QUOTE_SVG();
+  const label = o.kind === 'mail' ? 'Mail · now' : o.kind === 'whatsapp' ? 'WhatsApp · now' : 'Just now';
+  return `<div class="notif k-${o.kind}"><span class="nf-ic">${icon}</span><span class="nf-body"><span class="nf-k">${label}</span><b>${esc(o.from)}${o.subject ? `: ${esc(o.subject)}` : ''}</b><span class="nf-t">${esc(o.text)}</span></span></div>`;
+}
+
+// ─── Story home ──────────────────────────────────────────────
+async function renderStory() {
+  state.welcome = false;
+  if (!state.me) $app.innerHTML = `<div class="skel" aria-hidden="true"><div class="sk" style="height:44px"></div><div class="sk" style="height:40px;margin-top:18px"></div><div class="sk" style="height:260px;margin-top:18px;border-radius:28px"></div></div>`;
+  const [me, st] = await Promise.all([loadMe(), loadStory()]);
+  if (me.user.isGuest && me.stats.sessionsDone === 0 && st.doneCount === 0 && !me.user.targetRole && !state.skipWelcome) return renderWelcome();
+  $app.innerHTML = '';
+  const s = me.stats;
+  const chapter = st.chapters.find((c) => c.episodes.some((e) => e.id === st.current?.id)) || st.chapters[st.chapters.length - 1];
+  $app.append(
+    h(`<header class="story-head">
+      <div><div class="sh-k">${me.user.name ? `${esc(me.user.name.split(' ')[0].toUpperCase())}'S` : 'YOUR'} CAREER STORY</div><div class="sh-t">Chapter ${chapter.n} · ${esc(chapter.title)}</div></div>
+      <a class="stat-chip flame ${s.practicedToday ? 'lit' : ''}" href="#/progress" aria-label="${s.streak} day streak">${I.flame(18)}<b>${s.streak}</b></a>
+      ${me.user.isGuest ? `<a class="stat-chip login" href="#/login">Log in</a>` : ''}
+    </header>`),
+  );
+  $app.append(h(careerTrack(st)));
+
+  const cur = st.current;
+  if (st.finished) {
+    $app.append(h(`<div class="ep-card done"><div class="ep-k">STORY COMPLETE</div><div class="ep-t">You got the job — and nailed your first week.</div><div class="ep-s">New chapters are coming. Keep chatting with Base and replay any episode to stay sharp.</div><a class="b3d gold block" href="#/base">Chat with Base</a></div>`));
+  } else if (cur.state === 'tomorrow') {
+    $app.append(
+      h(`<div class="ep-card locked">
+        <span class="ep-ic">${I.lock(26)}</span>
+        <div class="ep-k">EPISODE ${cur.n} · UNLOCKS TOMORROW</div>
+        <div class="ep-t">${esc(cur.title)}</div>
+        <div class="ep-s">${esc(cur.setup)}</div>
+        <div class="ep-s small2">You've done ${st.newToday} new episodes today — great work. Base will message you in the morning.</div>
+        <a class="b3d green block" href="#/base">${I.chat(20)} Chat with Base meanwhile</a>
+      </div>`),
+    );
+  } else {
+    const card = h(`<div class="ep-card">
+      <span class="ep-glow"></span>
+      <span class="ep-ic">${cur.mode === 'call' ? PHONE_SVG(28, '#F2B33D') : I.mic(28)}</span>
+      <div class="ep-k">EPISODE ${cur.n} · TODAY</div>
+      <div class="ep-t">${esc(cur.title)}</div>
+      <div class="ep-s">${esc(cur.setup)}</div>
+      <div class="ep-tags"><span>${cur.mode === 'call' ? 'Phone call' : 'Conversation'} · ~5 min</span>${cur.prep ? '<span>+ 5 new phrases</span>' : ''}</div>
+      <button class="b3d green block" data-start>${I.play(18)} Start episode</button>
+      ${cur.prep ? `<a class="ep-prep" href="#/learn/${cur.prep}">Prep with Base first · 5 useful phrases</a>` : ''}
+    </div>`);
+    card.querySelector('[data-start]').addEventListener('click', () => {
+      unlockAudio();
+      sfx.tap();
+      startEpisode(cur);
+    });
+    $app.append(card);
+  }
+
+  const base = st.mentor;
+  $app.append(
+    h(`<a class="base-strip" href="#/base">${mascot('sm')}${base?.unread !== false ? '<span class="dot-unread"></span>' : ''}
+      <span class="bs-body"><b>Base</b><span class="bs-t">${esc(base?.text || 'Tap to say hi — practise anything with me, any time.')}</span></span>${I.chev(20)}</a>`),
+  );
+
+  $app.append(
+    h(`<div class="mini-stats">
+      <div><b>${s.minutesSpoken}</b><span>min of English spoken</span></div>
+      <div><b>${me.readiness?.score || 0}<small>%</small></b><span>job-ready English</span></div>
+      <div><b>${st.doneCount}/${st.total}</b><span>episodes</span></div>
+    </div>`),
+  );
+
+  for (const c of st.chapters) {
+    const sec = h(`<section class="ch-sec"><h2>Chapter ${c.n} · ${esc(c.title)}<span class="ml">${esc(c.ml)}</span></h2></section>`);
+    for (const e of c.episodes) {
+      const locked = e.state === 'locked' || e.state === 'tomorrow';
+      const row = h(`<button class="ep-row s-${e.state}" ${locked ? 'disabled' : ''}>
+        <span class="er-ic">${e.state === 'done' ? I.check(16) : locked ? I.lock(15) : e.mode === 'call' ? PHONE_SVG(16) : I.mic(16)}</span>
+        <span class="er-t"><b>${e.n}. ${esc(e.title)}</b><span>${e.state === 'done' ? 'Replay' : e.state === 'tomorrow' ? 'Unlocks tomorrow' : locked ? 'Locked' : 'Up next'}${e.mode === 'call' ? ' · phone call' : ''}</span></span>
+        ${locked ? '' : I.chev(18)}
+      </button>`);
+      if (!locked) row.addEventListener('click', () => startEpisode(e));
+      sec.append(row);
+    }
+    $app.append(sec);
+  }
+}
+
+function startEpisode(ep) {
+  state.episode = ep;
+  if (ep.mode === 'call') go(`#/call/${ep.id}`);
+  else go(`#/talk/${ep.id}`);
+}
+
+// ─── Incoming call ───────────────────────────────────────────
+let ringTimer = null;
+function ring(on) {
+  clearInterval(ringTimer);
+  if (!on) return;
+  const r = () => {
+    sfx.ring?.();
+    buzz([400, 200, 400]);
+  };
+  r();
+  ringTimer = setInterval(r, 2400);
+}
+
+async function renderIncoming(id) {
+  state.welcome = false;
+  if (!state.story) await loadStory();
+  const ep = allEpisodes().find((e) => e.id === id);
+  if (!ep) return go('#/');
+  state.episode = ep;
+  $app.innerHTML = '';
+  const el = h(`<section class="incoming">
+    <div class="ic-k">EPISODE ${ep.n} · ${esc(ep.title.toUpperCase())}</div>
+    <div class="ic-av"><span class="ring1"></span><span class="ring2"></span><span class="ic-init">${esc((ep.caller || '?').charAt(0))}</span></div>
+    <div class="ic-name">${esc(ep.caller)}</div>
+    <div class="ic-role">${esc(ep.callerRole || '')}</div>
+    <div class="ic-state"><i></i>Incoming call…</div>
+    <div class="ic-tip">${mascot('xs')}<span><b>Base:</b> ${esc(ep.setup)}</span></div>
+    <div class="ic-actions">
+      <span><button class="ic-btn decline" aria-label="Not now">${PHONE_SVG(30, '#fff')}</button><small>Not now</small></span>
+      <span><button class="ic-btn accept" aria-label="Answer the call">${PHONE_SVG(34, '#fff')}</button><small>Answer</small></span>
+    </div>
+  </section>`);
+  $app.append(el);
+  state.cleanup = () => ring(false);
+  setTimeout(() => ring(true), 400);
+  el.querySelector('.decline').addEventListener('click', () => {
+    ring(false);
+    go('#/');
+  });
+  el.querySelector('.accept').addEventListener('click', () => {
+    ring(false);
+    unlockAudio();
+    state.callAnswered = id;
+    go(`#/talk/${id}`);
+  });
+}
+
+// ─── Base: the WhatsApp-style mentor chat ────────────────────
+async function renderChat() {
+  state.welcome = false;
+  if (!state.me) await loadMe();
+  const r = await api('/chat');
+  $app.innerHTML = '';
+  const wrap = h(`<div class="chat">
+    <header class="chat-head">${mascot('sm')}<div><b>Base</b><span>your English mentor · online</span></div></header>
+    <div class="chat-thread" aria-live="polite"><div class="day-pill">TODAY</div></div>
+    <div class="chat-compose">
+      <form class="cc-form"><input placeholder="Type, or tap the mic to talk" aria-label="Message Base" autocomplete="off" /></form>
+      <button class="cc-mic" aria-label="Record a voice note">${I.mic(24)}<span class="ring"></span></button>
+    </div>
+  </div>`);
+  $app.append(wrap);
+  const thread = wrap.querySelector('.chat-thread');
+  const scroll = () => requestAnimationFrame(() => window.scrollTo({ top: document.body.scrollHeight, behavior: 'smooth' }));
+  if (r.locked) {
+    thread.append(h(`<div class="msg base">${r.locked === 'login' ? 'Log in to keep chatting with me — your progress is saved to your number.' : r.locked === 'daily_limit' ? "That's enough practice for today! Let's talk again tomorrow." : 'Your free sessions are used up. Get the monthly pass to keep practising with me.'}<a class="b3d green" style="margin-top:10px" href="${r.locked === 'login' ? '#/login' : r.locked === 'daily_limit' ? '#/' : '#/upgrade'}">${r.locked === 'login' ? 'Log in' : r.locked === 'daily_limit' ? 'Back to my story' : 'See the monthly pass'}</a></div>`));
+    wrap.querySelector('.chat-compose').remove();
+    return;
+  }
+  const sid = r.session.id;
+  const time = () => new Date().toLocaleTimeString('en-IN', { hour: 'numeric', minute: '2-digit' });
+  const baseMsg = (text, { autoplay = false } = {}) => {
+    const m = h(`<div class="msg base"><button class="vn-play" aria-label="Play voice note">${I.play(14)}</button><span class="vn-wave">${'<i></i>'.repeat(14)}</span><div class="m-t">${esc(text)}</div><span class="m-time">${time()}</span></div>`);
+    const play = () => {
+      m.classList.add('playing');
+      say(text).then(() => m.classList.remove('playing'));
+    };
+    m.querySelector('.vn-play').addEventListener('click', () => {
+      unlockAudio();
+      play();
+    });
+    thread.append(m);
+    if (autoplay) play();
+    return m;
+  };
+  const meMsg = (html) => {
+    const m = h(`<div class="msg me"><div class="m-t">${html}</div><span class="m-time">${time()}</span></div>`);
+    thread.append(m);
+    return m;
+  };
+  for (const m of r.messages) {
+    if (m.role === 'partner') baseMsg(m.text);
+    else meMsg(markMl(m.text));
+  }
+  const quick = () => {
+    thread.querySelector('.quick')?.remove();
+    const cur = state.story?.current;
+    const q = h(`<div class="quick">${cur && cur.state === 'current' ? `<button data-ep>${cur.mode === 'call' ? 'Take the call' : 'Start my episode'}</button>` : ''}<button data-q>Practise a question</button></div>`);
+    q.querySelector('[data-ep]')?.addEventListener('click', () => startEpisode(cur));
+    q.querySelector('[data-q]').addEventListener('click', () => go('#/questions'));
+    thread.append(q);
+  };
+  if (!state.story) await loadStory().catch(() => {});
+  quick();
+  scroll();
+
+  let busy = false;
+  async function send(form, pendingHtml) {
+    if (busy) return;
+    busy = true;
+    thread.querySelector('.quick')?.remove();
+    const mine = meMsg(pendingHtml);
+    const typing = h(`<div class="msg base typing"><span class="dots"><span></span><span></span><span></span></span></div>`);
+    thread.append(typing);
+    scroll();
+    let t;
+    try {
+      t = await api(`/sessions/${sid}/turn`, { method: 'POST', form });
+    } catch (e) {
+      typing.remove();
+      mine.remove();
+      toast(e.message);
+      busy = false;
+      return;
+    }
+    typing.remove();
+    let html = markMl(t.transcript);
+    if (t.correction?.youSaid && t.transcript.includes(t.correction.youSaid) && t.correction.youSaid.length < t.transcript.length) {
+      html = markMl(t.transcript).replace(esc(t.correction.youSaid), `<mark>${esc(t.correction.youSaid)}</mark>`);
+    } else if (t.correction) html = `<mark>${markMl(t.transcript)}</mark>`;
+    mine.querySelector('.m-t').innerHTML = html;
+    handleRewards(t.rewards, mine);
+    if (t.correction) await fixCard(t.correction);
+    else if (t.coaching?.phrase) thread.append(h(`<div class="phrase-chip">${I.book(14)} New phrase: <b>${esc(t.coaching.phrase)}</b></div>`));
+    baseMsg(t.reply, { autoplay: true });
+    quick();
+    scroll();
+    busy = false;
+  }
+
+  function fixCard(c) {
+    return new Promise((resolve) => {
+      const card = h(`<div class="fix-inline">
+        <div class="fi-k">ONE SMALL FIX</div>
+        <div class="fi-right"><button class="fb-say sm" aria-label="Hear it">${I.speaker(16)}</button>“${esc(c.sayItLikeThis)}”</div>
+        <div class="fi-why ml">${esc(c.explanationMl)}</div>
+        <div class="fi-act"><button class="fi-mic">${I.mic(16)} <span>Say it again</span></button><button class="linkish" data-later>Later</button></div>
+        <div class="fi-res" aria-live="polite"></div>
+      </div>`);
+      thread.append(card);
+      scroll();
+      card.querySelector('.fb-say').addEventListener('click', () => say(c.sayItLikeThis, { slow: true }));
+      say(c.sayItLikeThis, { slow: true });
+      let done = false;
+      const finish = () => {
+        if (done) return;
+        done = true;
+        card.querySelector('.fi-act')?.remove();
+        resolve();
+      };
+      card.querySelector('[data-later]').addEventListener('click', () => {
+        track('retry_skipped', { attempts: 0, where: 'chat' }, sid);
+        finish();
+      });
+      const btn = card.querySelector('.fi-mic');
+      micControl(btn, {
+        icon: `${I.mic(16)} <span>Say it again</span>`,
+        stopIcon: `<span class="stopsq sm"></span> <span>Done</span>`,
+        async onAudio(out) {
+          btn.disabled = true;
+          const rr = await api('/retry', { method: 'POST', form: audioForm(out, { target: c.sayItLikeThis, mistakeId: c.mistakeId, context: 'session', sessionId: sid }) }).catch((e) => toast(e.message));
+          btn.disabled = false;
+          if (!rr) return;
+          if (rr.pass) {
+            sfx.success();
+            handleRewards(rr.rewards, card);
+            card.classList.add('ok');
+            card.querySelector('.fi-res').innerHTML = `${I.check(14)} Perfect!`;
+            finish();
+          } else {
+            sfx.soft();
+            card.querySelector('.fi-res').innerHTML = `Almost — try once more. We heard: “${esc(rr.transcript)}”`;
+          }
+        },
+      });
+    });
+  }
+
+  const mic = wrap.querySelector('.cc-mic');
+  micControl(mic, {
+    icon: `${I.mic(24)}`,
+    stopIcon: `<span class="stopsq"></span>`,
+    onAudio(out) {
+      sfx.send();
+      send(audioForm(out), `<span class="wave"><i></i><i></i><i></i><i></i><i></i></span>`);
+    },
+  });
+  const form = wrap.querySelector('.cc-form');
+  form.addEventListener('submit', (e) => {
+    e.preventDefault();
+    const v = form.querySelector('input').value.trim();
+    if (!v) return;
+    form.querySelector('input').value = '';
+    const f = new FormData();
+    f.append('text', v);
+    send(f, esc(v));
+  });
+  state.cleanup = () => recorder.release();
+}
+
+// ─── Phrases tab ─────────────────────────────────────────────
+async function renderPhrasesTab() {
+  await renderPhrasebook();
+  const head = $app.querySelector('.topbar');
+  head?.replaceWith(statsBar());
+  const links = h(`<div class="pt-links">
+    <a class="big-card white" href="#/questions"><span class="bc-ic" style="background:var(--sky-l);color:var(--sky-d)">${I.chat(24)}</span><span><b>Speaking practice</b><span>Answer any single question out loud</span></span><span class="go">${I.chev(20)}</span></a>
+    <a class="big-card white" href="#/answers"><span class="bc-ic" style="background:var(--gold-soft);color:var(--gold-ink)">${I.star(22)}</span><span><b>My best answers</b><span>Your answers in natural English</span></span><span class="go">${I.chev(20)}</span></a>
+    <a class="big-card gold" href="#/warmup"><span class="bc-ic">${I.bolt(24)}</span><span><b>Fix my mistakes</b><span>2-minute warm-up · <a href="#/bank" style="color:inherit">Mistake Bank</a></span></span><span class="go">${I.chev(20)}</span></a>
+  </div>`);
+  $app.querySelector('h1')?.after(links);
+}
+
+// ─── Episode ending + milestones (part of the lesson-complete sequence) ──
+function storyScreen(r) {
+  const s = r.story;
+  const seenW = new Set();
+  r = { ...r, words: r.words.filter((w) => !seenW.has(w.english.toLowerCase()) && seenW.add(w.english.toLowerCase())) };
+  const st = state.story;
+  const el = h(`<section class="done-screen story-end">
+    ${outcomeCard(s.outcome)}
+    <div class="se-head"><div class="se-k">EPISODE ${s.episode.n} COMPLETE</div><h1>${esc(s.headline)}</h1></div>
+    ${st ? careerTrack({ ...st, stage: s.milestone === 'offer' ? 4 : Math.min(st.stages.length - 1, Math.max(s.episode.stage, s.next ? s.next.stage : s.episode.stage)) }, { small: true }) : ''}
+    <div class="learned">
+      <div class="ld-head"><b>What you learned</b><span>+${r.xp || 0} XP</span></div>
+      ${r.mistakes.map((m) => `<div class="ld-row"><span class="tick">${I.check()}</span><span>${esc(m.corrected)}</span></div>`).join('') || '<div class="ld-row"><span class="tick">' + I.check() + '</span><span>Clear English all the way — no fixes needed!</span></div>'}
+      ${r.words.length ? `<div class="ld-words">${r.words.slice(0, 3).map((w) => `<span class="word-chip"><span class="ml">${esc(w.said)}</span> → <b>${esc(w.english)}</b></span>`).join('')}</div>` : ''}
+    </div>
+    ${s.next ? `<div class="next-ep"><span class="ne-ic">${I.lock(22)}</span><span><span class="ne-k">NEXT · EPISODE ${s.next.n}</span><b>${esc(s.next.title)}</b><span class="ne-s">${esc(s.episode.teaser)}</span></span></div>` : ''}
+  </section>`);
+  setTimeout(() => {
+    sfx.level();
+    buzz([30, 40, 60]);
+  }, 250);
+  return el;
+}
+
+function milestoneScreen(r) {
+  const s = r.story;
+  const isOffer = s.milestone === 'offer';
+  const el = h(`<section class="done-screen milestone">
+    <div class="ms-k">${isOffer ? 'CHAPTER 3 COMPLETE' : 'CHAPTER 4 COMPLETE'}</div>
+    <h1 class="center">${isOffer ? 'You got the offer!' : 'Welcome to the team!'}</h1>
+    <div class="letter"><span class="lt-seal">${I.star(28)}</span>
+      <div class="lt-co">${esc(s.company.toUpperCase())}</div><div class="kasavu"></div>
+      <p>${esc(s.outcome.text)}</p>
+    </div>
+    <p class="center ml done-sub">${isOffer ? 'ഇനി അടുത്ത അധ്യായം — പുതിയ ജോലിയിലെ ആദ്യ ആഴ്ച!' : 'ആദ്യ ആഴ്ച വിജയകരമായി പൂർത്തിയാക്കി!'}</p>
+  </section>`);
+  setTimeout(() => {
+    sfx.level();
+    celebrate(isOffer ? 'Offer letter!' : 'First week done!', 'അഭിനന്ദനങ്ങൾ!');
+  }, 300);
+  return el;
+}
+
 // ─── Practice tab ────────────────────────────────────────────
 async function renderPractice() {
   state.welcome = false;
@@ -1179,7 +1572,7 @@ async function renderProgress() {
   const s = me.stats;
   $app.innerHTML = '';
   $app.append(statsBar());
-  $app.append(h(`<h1>Progress</h1>`));
+  $app.append(h(`<div class="me-head"><h1>Me</h1>${me.user.isGuest ? `<a class="b3d white" href="#/login">Log in</a>` : `<a class="b3d white" href="#/settings">${I.user(18)} Settings</a>`}</div>`));
   const R = me.readiness || { score: 0, areas: [] };
   const d = me.user.daysToInterview;
   $app.append(
@@ -1276,9 +1669,20 @@ async function renderTalk(scenarioId) {
   let handsFree = prefs.get('handsFree', false);
   let micRef = null;
   const sessionXp = { n: 0 };
+  if (!state.story) await loadStory().catch(() => {});
+  const ep = allEpisodes().find((e) => e.id === scenarioId);
+  const isCall = ep?.mode === 'call';
+  let callTimer = null;
+  if (isCall) {
+    L.classList.add('call-mode');
+    document.body.classList.add('call-ui');
+    L.querySelector('.l-scene .mascot').outerHTML = `<span class="caller-av">${esc((ep.caller || '?').charAt(0))}</span>`;
+  }
   state.cleanup = () => {
     sheet?.remove();
     recorder.release();
+    clearInterval(callTimer);
+    document.body.classList.remove('call-ui');
   };
 
   const setBar = (n, max) => {
@@ -1336,10 +1740,26 @@ async function renderTalk(scenarioId) {
   try {
     const r = await api('/sessions', { method: 'POST', body: { scenarioId, question: scenarioId === 'drill' ? state.drillQuestion : undefined } });
     session = r.session;
-    roleEl.innerHTML = `<b>${esc(session.title)}</b>${I.briefcase(14)} ${scenarioId === 'drill' ? 'One question' : `Base plays: ${esc(session.partnerLabel || 'your partner')}`}${state.me?.user?.targetRoleLabel ? ` · for ${esc(state.me.user.targetRoleLabel)}` : ''}`;
+    if (isCall) {
+      const t0 = Date.now();
+      roleEl.innerHTML = `<b>${esc(ep.caller)} · ${esc(ep.callerRole || '')}</b><span class="call-live"><i></i><span data-ct>0:00</span> · Episode ${ep.n}</span>`;
+      callTimer = setInterval(() => {
+        const sec = Math.floor((Date.now() - t0) / 1000);
+        const el = roleEl.querySelector('[data-ct]');
+        if (el) el.textContent = `${Math.floor(sec / 60)}:${String(sec % 60).padStart(2, '0')}`;
+      }, 1000);
+    } else if (ep) {
+      roleEl.innerHTML = `<b>Episode ${ep.n} · ${esc(ep.title)}</b><span class="scene">${esc(ep.setup)}</span>`;
+    } else {
+      roleEl.innerHTML = `<b>${esc(session.title)}</b>${I.briefcase(14)} ${scenarioId === 'drill' ? 'One question' : `Base plays: ${esc(session.partnerLabel || 'your partner')}`}${state.me?.user?.targetRoleLabel ? ` · for ${esc(state.me.user.targetRoleLabel)}` : ''}`;
+    }
     setBar(0, session.maxTurns);
     showPartner(r.opener);
   } catch (e) {
+    if (e.status === 409) {
+      toast(e.message);
+      return go('#/');
+    }
     if (e.status === 402) {
       if (e.data?.reason === 'login') {
         track('login_prompt_shown', { from: 'limit' });
@@ -1645,8 +2065,10 @@ async function renderTalk(scenarioId) {
       await speak(closing).catch(() => {});
     }
     stopSpeaking();
+    clearInterval(callTimer);
+    document.body.classList.remove('call-ui');
     $app.innerHTML = '';
-    $app.append(h(`<div class="lesson-wait">${mascot('lg', 'cheer')}<p>Counting what you learned…</p></div>`));
+    $app.append(h(`<div class="lesson-wait">${mascot('lg', 'cheer')}<p>${isCall ? 'Call ended. Waiting for news…' : 'Counting what you learned…'}</p></div>`));
     try {
       const r = await api(`/sessions/${session.id}/end`, { method: 'POST' });
       await loadMe();
@@ -1679,8 +2101,12 @@ function renderComplete(r, scenarioId, { fixes, turns }) {
   const sec = Math.round(r.secondsSpoken);
   const steps = [];
 
+  if (r.story) {
+    steps.push(() => storyScreen(r));
+    if (r.story.milestone) steps.push(() => milestoneScreen(r));
+  }
   // 1) Lesson complete + stat tiles + level bar
-  steps.push(() => {
+  if (!r.story) steps.push(() => {
     const lb = r.levelBefore || r.level;
     const up = r.level && lb && r.level.level > lb.level;
     const el = h(`<section class="done-screen">
@@ -1762,7 +2188,7 @@ function renderComplete(r, scenarioId, { fixes, turns }) {
   }
 
   // 3) Save progress (guest) or tomorrow hook
-  steps.push(() => {
+  if (!r.story || r.needLogin) steps.push(() => {
     if (r.needLogin) {
       track('login_prompt_shown', { from: 'summary' });
       const el = h(`<section class="done-screen">
@@ -2172,10 +2598,10 @@ async function renderSettings() {
   if (state.me.user.isGuest) return go('#/login');
   state.welcome = false;
   $app.innerHTML = '';
-  $app.append(statsBar());
+  $app.append(topbar({ back: true }));
   const u = state.me.user;
   const a = state.me.allowance;
-  $app.append(h(`<h1>Profile</h1>`));
+  $app.append(h(`<h1>Settings</h1>`));
 
   const plan = h(`<div class="card dark"><div class="kasavu"></div><div class="display" style="font-weight:700;font-size:18px;margin-top:10px">Your plan</div><p style="margin:4px 0 12px;color:#b9c8c3;font-size:14px">${
     a.plan === 'paid' ? 'Monthly pass — active' : a.canStart ? `Free trial · ${a.remaining} session${a.remaining === 1 ? '' : 's'} left` : 'Free trial finished'

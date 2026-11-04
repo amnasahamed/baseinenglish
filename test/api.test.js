@@ -77,7 +77,7 @@ test('guest → conversation → correction → retry → summary → login → 
   assert.ok(end.data.coachNote);
 
   // Guest can't start a 2nd session without logging in
-  const blocked = await call('/sessions', { method: 'POST', body: { scenarioId: 'strengths' } });
+  const blocked = await call('/sessions', { method: 'POST', body: { scenarioId: 'intro_yourself' } });
   assert.equal(blocked.status, 402);
   assert.equal(blocked.data.reason, 'login');
 
@@ -103,7 +103,7 @@ test('guest → conversation → correction → retry → summary → login → 
   assert.equal(warm.data.items.length, 2);
 
   // A returning learner gets a personalised opener
-  const s2 = await call('/sessions', { method: 'POST', body: { scenarioId: 'strengths' } });
+  const s2 = await call('/sessions', { method: 'POST', body: { scenarioId: 'intro_yourself' } });
   assert.match(s2.data.opener, /Welcome back/);
 
   const stats = await fetch(base + '/api/admin/stats?token=admin').then((r) => r.json());
@@ -115,7 +115,7 @@ test('guest → conversation → correction → retry → summary → login → 
 
 test('logging in on a new device merges the guest into the existing account', async () => {
   cookie = '';
-  const s = await call('/sessions', { method: 'POST', body: { scenarioId: 'why_hire' } });
+  const s = await call('/sessions', { method: 'POST', body: { scenarioId: 'intro_yourself' } });
   await call(`/sessions/${s.data.session.id}/turn`, { method: 'POST', form: text('We discussed about the new project in the meeting.') });
   await call('/auth/request-otp', { method: 'POST', body: { phone: '+919999999999' } });
   const ok = await call('/auth/verify', { method: 'POST', body: { phone: '+919999999999', code: '123456' } });

@@ -38,7 +38,7 @@ export const scenarios = [
     id: 'intro_yourself', area: 'intro', title: 'Introduce yourself', subtitle: 'Name, studies, job — in clear English',
     partnerLabel: 'New friendly HR', role: 'a friendly HR person meeting the learner for the first time',
     brief: 'Ask them to introduce themselves, then simple follow-ups: where they are from, what they studied, what they do now. Keep questions short and easy.',
-    opener: "Hi! Nice to meet you. Could you introduce yourself?", maxTurns: 4,
+    opener: "Hi! I'm from {company}. Nice to meet you — could you introduce yourself?", maxTurns: 4,
   },
   {
     id: 'background', area: 'intro', title: 'Your background', subtitle: 'Family, hometown, hobbies',
@@ -64,13 +64,13 @@ export const scenarios = [
     id: 'hr_call', area: 'calls', title: 'HR screening call', subtitle: 'The first phone call from a company',
     partnerLabel: 'HR on the phone', role: 'an HR recruiter calling the learner on the phone about a job application',
     brief: 'Phone-call style: confirm who you are speaking to, check they applied, ask current role/notice period, expected salary, and fix an interview time. Short phone-style lines.',
-    opener: "Hello, am I speaking with the candidate who applied for the opening at our company? This is Priya from HR.", maxTurns: 5,
+    opener: "Hello! This is Priya from {company} HR. Is this a good time to talk about your application?", maxTurns: 5,
   },
   {
     id: 'followup_call', area: 'calls', title: 'Reschedule & follow up', subtitle: 'Call HR politely about your interview',
     partnerLabel: 'HR receptionist', role: 'an HR receptionist answering the phone',
     brief: 'The learner is the caller. Play the receptionist: ask who is calling and why. They might need to reschedule an interview or ask about their application status. Ask polite clarifying questions.',
-    opener: "Good morning, HR department. How can I help you?", maxTurns: 4,
+    opener: "Good morning, {company} HR. How can I help you?", maxTurns: 4,
   },
   // Unit 4 — interview English
   {
@@ -95,7 +95,7 @@ export const scenarios = [
     id: 'mock_full', area: 'interview', title: 'Full mock interview', subtitle: 'Put all your English together',
     partnerLabel: 'Interview panel', role: "an interview panel for the learner's target job",
     brief: 'Run a full but friendly interview, ONE question per turn: introduce yourself → your work or studies → a project → a strength → a difficult situation → why this job → notice period or availability → "any questions for us?".',
-    opener: "Good morning, and welcome. Let's begin — please introduce yourself.", maxTurns: 8,
+    opener: "Good morning, and welcome to {company}. Let's begin — please introduce yourself.", maxTurns: 8,
   },
   // Unit 5 — English at your new job
   {
@@ -115,6 +115,13 @@ export const scenarios = [
     partnerLabel: 'Customer', role: 'a slightly unhappy customer with a problem related to the learner\'s field (or a delayed order)',
     brief: 'Explain your problem. Let the learner greet, listen, apologise, ask questions and offer a solution. Calm down when they handle it well.',
     opener: "Hello? I've been waiting three days for an update and nobody has called me back.", maxTurns: 4,
+  },
+  // Base, the mentor, on a WhatsApp-style chat
+  {
+    id: 'mentor', area: null, title: 'Chat with Base', subtitle: 'Your English mentor',
+    partnerLabel: 'Base', role: "Base, the learner's warm, encouraging English mentor, chatting on WhatsApp",
+    brief: 'A casual WhatsApp-style chat. Ask about their real day and job hunt, and help them get ready for their next story episode. Keep every reply short (1–2 sentences) and end with ONE easy question. Never formal.',
+    opener: "Hey! How's your day going?", maxTurns: 60, hidden: true,
   },
   // Single-question speaking practice
   {

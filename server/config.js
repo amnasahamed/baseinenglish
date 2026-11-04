@@ -33,6 +33,7 @@ export const config = {
 
   freeTrialSessions: num(env.FREE_TRIAL_SESSIONS, 7),
   dailySessionLimit: num(env.DAILY_SESSION_LIMIT, 5),
+  episodesPerDay: num(env.EPISODES_PER_DAY, 2),
   upgradeUrl: env.UPGRADE_URL || '',
   upgradePriceText: env.UPGRADE_PRICE_TEXT || '₹149 / month',
   adminToken: env.ADMIN_TOKEN || '',

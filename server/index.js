@@ -11,6 +11,7 @@ import { coachTurn, personalOpener, summarizeSession } from './coach.js';
 import { compareSpoken } from './compare.js';
 import { scenarioById, publicScenarios, units, questionBank, roleById, phraseLessons } from './scenarios.js';
 import { startNudgeScheduler } from './nudges.js';
+import { buildStory, episodeById, outcomeFor, personalizeScenario } from './story.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
@@ -175,6 +176,42 @@ api.post('/path/:node/complete', (req, res) => {
   res.json({ gained, units: buildPath(req.user.id), level: store.levelFor(store.getUser(req.user.id).xp) });
 });
 
+// ─── Career story & Base chat ────────────────────────────────
+api.get('/story', (req, res) => {
+  const u = store.getUser(req.user.id);
+  const st = buildStory(u, store.nodeProgress(u.id), config.episodesPerDay);
+  const chat = store.todaysSession(u.id, 'mentor');
+  const lastBase = chat ? [...store.getMessages(chat.id)].reverse().find((m) => m.role === 'partner') : null;
+  res.json({ ...st, mentor: lastBase ? { text: lastBase.text, unread: !store.getMessages(chat.id).some((m) => m.role === 'learner') } : null });
+});
+
+/** Today's chat with Base. Opens with a fresh message from Base (about the next episode). */
+api.get(
+  '/chat',
+  wrap(async (req, res) => {
+    const u = store.getUser(req.user.id);
+    let session = store.todaysSession(u.id, 'mentor');
+    if (!session) {
+      const a = allowance(u);
+      if (!a.canStart) return res.json({ locked: a.reason });
+      const st = buildStory(u, store.nodeProgress(u.id), config.episodesPerDay);
+      const next = st.current ? `Their next episode: "${st.current.title}" — ${st.current.setup}` : 'They finished the story so far.';
+      const scenario = { ...personalizeScenario(scenarioById.mentor, u) };
+      scenario.brief += `\n${next}`;
+      session = store.createSession(u.id, 'mentor');
+      let opener = `Hey${u.name ? ' ' + u.name.split(' ')[0] : ''}! ${st.current ? `Ready for "${st.current.title}"? Want to warm up with me first?` : 'How is your day going?'}`;
+      try {
+        opener = await personalOpener({ scenario, user: u, summaries: store.recentSummaries(u.id), topMistakes: store.topMistakeLabels(u.id, 3) });
+      } catch (e) {
+        console.error('[chat opener]', e.message);
+      }
+      store.addMessage(session.id, 'partner', opener);
+    }
+    const messages = store.getMessages(session.id).map((m) => ({ role: m.role, text: m.text, meta: safeJson(m.meta, null) }));
+    res.json({ session: { id: session.id }, messages });
+  }),
+);
+
 // ─── Interview prep: answer bank & question bank ─────────────
 api.get('/answers', (req, res) => {
   res.json({
@@ -293,11 +330,18 @@ api.post(
   '/sessions',
   rateLimit(10),
   wrap(async (req, res) => {
-    const scenario = scenarioById[req.body?.scenarioId];
-    if (!scenario) throw httpError(400, 'Unknown scenario');
+    const base = scenarioById[req.body?.scenarioId];
+    if (!base) throw httpError(400, 'Unknown scenario');
     const u = store.getUser(req.user.id);
     const a = allowance(u);
     if (!a.canStart) throw httpError(402, 'Practice limit reached', { reason: a.reason });
+    if (episodeById[base.id]) {
+      const st = buildStory(u, store.nodeProgress(u.id), config.episodesPerDay);
+      const ep = st.chapters.flatMap((c) => c.episodes).find((e) => e.id === base.id);
+      if (ep.state === 'locked') throw httpError(409, 'Finish the earlier episodes first', { reason: 'locked' });
+      if (ep.state === 'tomorrow') throw httpError(409, 'Your next episode unlocks tomorrow', { reason: 'tomorrow' });
+    }
+    const scenario = personalizeScenario(base, u);
 
     const session = store.createSession(u.id, scenario.id);
     const summaries = store.recentSummaries(u.id);
@@ -330,8 +374,8 @@ api.post(
   wrap(async (req, res) => {
     const session = ownSession(req);
     if (session.done) throw httpError(409, 'This conversation has finished.');
-    const scenario = scenarioById[session.scenario_id];
     const u = store.getUser(req.user.id);
+    const scenario = personalizeScenario(scenarioById[session.scenario_id], u);
     const seconds = Number(req.body?.durationSec) || 0;
 
     let transcript = '';
@@ -415,8 +459,8 @@ api.post(
   rateLimit(10),
   wrap(async (req, res) => {
     const session = ownSession(req);
-    const scenario = scenarioById[session.scenario_id];
     const u = store.getUser(req.user.id);
+    const scenario = personalizeScenario(scenarioById[session.scenario_id], u);
     const history = store.getMessages(session.id);
     const learnerMsgs = history.filter((m) => m.role === 'learner').map((m) => ({ ...m, meta: safeJson(m.meta, {}) }));
     const mistakeIds = [...new Set(learnerMsgs.map((m) => m.meta.mistakeId).filter(Boolean))];
@@ -464,6 +508,7 @@ api.post(
       coachNote,
       nextHook,
       readiness: store.readiness(u.id),
+      story: learnerMsgs.length && episodeById[scenario.id] ? outcomeFor(scenario.id, store.getUser(u.id)) : null,
       report,
       avgRating: sessionAnswers.length ? Math.round((sessionAnswers.reduce((a, m) => a + (m.rating || 2), 0) / sessionAnswers.length) * 10) / 10 : null,
       xp: sessionXp,
