@@ -148,6 +148,15 @@ CREATE TABLE IF NOT EXISTS answers (
   created_at TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_answers_user ON answers(user_id, area, id);
+CREATE TABLE IF NOT EXISTS phrases (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  en TEXT NOT NULL,
+  ml TEXT,
+  source TEXT,
+  created_at TEXT NOT NULL,
+  UNIQUE(user_id, en)
+);
 CREATE TABLE IF NOT EXISTS path_progress (
   user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
   node_id TEXT NOT NULL,
@@ -239,6 +248,8 @@ export function mergeUsers(fromId, intoId) {
     db.prepare('UPDATE sessions SET user_id = ? WHERE user_id = ?').run(intoId, fromId);
     db.prepare('UPDATE events SET user_id = ? WHERE user_id = ?').run(intoId, fromId);
     db.prepare('UPDATE answers SET user_id = ? WHERE user_id = ?').run(intoId, fromId);
+    db.prepare('UPDATE OR IGNORE phrases SET user_id = ? WHERE user_id = ?').run(intoId, fromId);
+    db.prepare('DELETE FROM phrases WHERE user_id = ?').run(fromId);
     for (const m of db.prepare('SELECT * FROM mistakes WHERE user_id = ?').all(fromId)) {
       const existing = db.prepare('SELECT id FROM mistakes WHERE user_id = ? AND key = ?').get(intoId, m.key);
       if (existing) {
@@ -577,16 +588,16 @@ export function nudgeCandidates() {
 
 // ─── Habit engine: XP, levels, quests, streak freezes, badges ─
 export const LEVELS = [
-  { at: 0, name: 'Applicant', ml: 'അപേക്ഷകൻ' },
-  { at: 100, name: 'Resume Ready', ml: 'റെസ്യൂമെ റെഡി' },
-  { at: 250, name: 'Shortlisted', ml: 'ഷോർട്ട്‌ലിസ്റ്റ് ചെയ്തു' },
-  { at: 450, name: 'Phone Screen Ready', ml: 'ഫോൺ ഇന്റർവ്യൂ റെഡി' },
-  { at: 700, name: 'HR Round Ready', ml: 'HR റൗണ്ട് റെഡി' },
-  { at: 1000, name: 'Technical Round Ready', ml: 'ടെക്നിക്കൽ റൗണ്ട് റെഡി' },
-  { at: 1400, name: 'Manager Round Ready', ml: 'മാനേജർ റൗണ്ട് റെഡി' },
-  { at: 1900, name: 'Final Round Ready', ml: 'ഫൈനൽ റൗണ്ട് റെഡി' },
-  { at: 2500, name: 'Offer Ready', ml: 'ഓഫർ റെഡി' },
-  { at: 3200, name: 'Hired', ml: 'ജോലി കിട്ടി!' },
+  { at: 0, name: 'Starter', ml: 'തുടക്കം' },
+  { at: 100, name: 'Speaking Up', ml: 'സംസാരിച്ചു തുടങ്ങി' },
+  { at: 250, name: 'Clear Speaker', ml: 'വ്യക്തമായി സംസാരിക്കും' },
+  { at: 450, name: 'Confident Speaker', ml: 'ആത്മവിശ്വാസത്തോടെ' },
+  { at: 700, name: 'Call Ready', ml: 'ഫോൺ കോളിന് റെഡി' },
+  { at: 1000, name: 'Interview Ready', ml: 'ഇന്റർവ്യൂവിന് റെഡി' },
+  { at: 1400, name: 'Office Ready', ml: 'ഓഫീസിന് റെഡി' },
+  { at: 1900, name: 'Team Player', ml: 'ടീമിലെ താരം' },
+  { at: 2500, name: 'Presenter', ml: 'അവതാരകൻ' },
+  { at: 3200, name: 'Fluent Professional', ml: 'ഒഴുക്കോടെ സംസാരിക്കുന്ന പ്രൊഫഷണൽ' },
 ];
 
 export function levelFor(xp) {
@@ -694,14 +705,14 @@ export function claimChest(userId) {
 }
 
 export const BADGES = [
-  { id: 'first_chat', name: 'First interview answer', ml: 'ആദ്യ ഉത്തരം', test: (s) => s.sessionsDone >= 1 },
+  { id: 'first_chat', name: 'First speaking lesson', ml: 'ആദ്യ സംഭാഷണം', test: (s) => s.sessionsDone >= 1 },
   { id: 'lifeline', name: 'Used the lifeline', ml: 'മലയാളം സഹായം', test: (s, x) => x.lifeline >= 1 },
   { id: 'said_it', name: 'Said it right', ml: 'ശരിയായി പറഞ്ഞു', test: (s, x) => x.retries >= 1 },
-  { id: 'strong1', name: 'Interview-ready answer', ml: 'മികച്ച ഉത്തരം', test: (s, x) => x.strong >= 1 },
-  { id: 'areas7', name: 'Covered every area', ml: 'എല്ലാ മേഖലകളും', test: (s, x) => x.areas >= 7 },
+  { id: 'strong1', name: 'Natural English answer', ml: 'സ്വാഭാവിക ഇംഗ്ലീഷ്', test: (s, x) => x.strong >= 1 },
+  { id: 'areas7', name: 'Spoke in every situation', ml: 'എല്ലാ സാഹചര്യങ്ങളിലും', test: (s, x) => x.areas >= 5 },
   { id: 'mock1', name: 'First mock interview', ml: 'ആദ്യ മോക്ക് ഇന്റർവ്യൂ', test: (s, x) => x.mocks >= 1 },
   { id: 'mock3', name: '3 mock interviews', ml: '3 മോക്ക് ഇന്റർവ്യൂ', test: (s, x) => x.mocks >= 3 },
-  { id: 'ready70', name: '70% interview ready', ml: '70% റെഡി', test: (s, x) => x.readiness >= 70 },
+  { id: 'ready70', name: '70% job-ready English', ml: '70% റെഡി', test: (s, x) => x.readiness >= 70 },
   { id: 'streak3', name: '3-day streak', ml: '3 ദിവസം', test: (s) => s.streak >= 3 },
   { id: 'streak7', name: 'One full week', ml: 'ഒരാഴ്ച', test: (s) => s.streak >= 7 },
   { id: 'master5', name: '5 mistakes mastered', ml: '5 തെറ്റുകൾ ജയിച്ചു', test: (s) => s.mistakesMastered >= 5 },
@@ -750,8 +761,8 @@ export function nodeRuns(userId) {
 }
 
 // ─── Interview answers & readiness ───────────────────────────
-// Rating scale from the coach: 1 = needs work, 2 = good, 3 = interview-ready.
-export const READINESS_AREAS = ['intro', 'experience', 'strengths', 'role', 'behavioural', 'motivation', 'closing'];
+// English rating from the coach: 1 = understandable, 2 = clear, 3 = natural & professional.
+export const READINESS_AREAS = ['intro', 'work', 'calls', 'interview', 'workplace'];
 
 export function saveAnswer(userId, { area, question, answer, polished, rating }) {
   if (!READINESS_AREAS.includes(area)) return null;
@@ -800,4 +811,14 @@ export function daysUntil(dateStr) {
   const today = new Date(dayOf() + 'T00:00:00Z');
   const d = new Date(dateStr + 'T00:00:00Z');
   return Math.round((d - today) / 86400000);
+}
+
+// ─── Phrasebook ──────────────────────────────────────────────
+export function savePhrase(userId, en, ml, source) {
+  const t = String(en || '').trim().slice(0, 200);
+  if (!t) return;
+  db.prepare('INSERT OR IGNORE INTO phrases (user_id, en, ml, source, created_at) VALUES (?, ?, ?, ?, ?)').run(userId, t, ml ? String(ml).slice(0, 300) : null, source || null, now());
+}
+export function listPhrases(userId) {
+  return db.prepare('SELECT en, ml, source, created_at FROM phrases WHERE user_id = ? ORDER BY id DESC').all(userId);
 }

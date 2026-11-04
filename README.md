@@ -1,14 +1,24 @@
-# Base — interview-ready English
+# Base — English for your job
 
-**Not an English course: an interview coach.** Base gets Malayalam-speaking job seekers ready to pass a job interview in English. Learners pick their target job (IT, nursing, BPO, sales, accounts, teaching, jobs abroad…), experience and interview date. Base then plays the interviewer, round by round, with questions tailored to that job.
+**A spoken-English teaching app for Malayalam speakers who want a (better) job.** The goal is English; the job journey is the context. Learners pick the kind of job they want (IT, nursing, BPO, sales, accounts, teaching, jobs abroad…), and every lesson uses situations and vocabulary from that world.
+
+The path follows the job journey, one unit at a time:
+1. **Introduce yourself:** name, studies, work, hometown.
+2. **Talk about your work:** daily tasks, past work, a project.
+3. **Phone & HR calls:** the HR screening call; calling to reschedule or follow up.
+4. **English for interviews:** strengths, why this job, questions about your field, plus a full mock interview.
+5. **English at your new job:** team updates, asking for leave or explaining a delay, talking to customers.
+
+Every unit starts with a **phrase lesson**: 5 useful sentences with the Malayalam meaning and a short note. The learner listens and says each one out loud. Then come **speaking lessons**, where Base plays HR, a colleague, a manager, an interviewer or a customer.
 
 After every answer the learner gets:
-- **An interview rating** (needs work / good / interview-ready) and **one interview tip** in English and Malayalam, e.g. "add one result with a number".
-- **A stronger version of their own answer**, saved to *My answers* for rehearsal before the interview.
-- **One English fix** (if needed), explained in Malayalam, which they must say out loud before moving on.
+- An **English rating**: understandable / clear / natural & professional. It covers their English, not their accent.
+- **One English fix** (if needed), explained in Malayalam, which they say out loud before continuing.
+- **One useful phrase** to learn, saved to their **Phrasebook**.
+- **How to say it naturally:** their own answer in natural English, saved to **My best answers** for rehearsal.
 - Malayalam words are allowed when stuck; the English word is taught.
 
-Progress is measured as **Interview Readiness** across 7 areas: introducing yourself, experience & projects, strengths & weaknesses, role questions, tough situations, why you / why us, and salary & closing. An interview-day countdown keeps it urgent.
+Progress is a **Job-ready English** score across 5 situations: introducing yourself, talking about work, phone & HR calls, interview answers, and English at work.
 
 ## Quick start
 
@@ -83,11 +93,11 @@ All the teaching logic (persona, the "one fix" rules, the list of common Malayal
 The app is built around the same ideas as the best language apps, with our own look and content:
 
 - **Welcome:** the mascot (Base, a little green friend with a coconut-leaf sprout) says hi. One button starts the first lesson; there's no signup.
-- **Learn tab (the path):** the interview, stage by stage. Unit 1 *First impressions* (tell me about yourself, walk me through your resume), Unit 2 *Your experience* (projects, strengths & weaknesses), Unit 3 *The real questions* (role-specific, tough situations), Unit 4 *Close the deal* (why hire you, salary & closing) and a **full 8-question mock interview**. Each unit also has a review of your own English mistakes and a reward chest. Steps unlock in order; the current one bobs with a "START" bubble and the mascot beside it. Tapping a step opens a card with what it is and the XP it's worth. The path is defined in `server/scenarios.js` (`units`).
+- **Learn tab (the path):** the 5 units above. Each starts with a phrase lesson (listen → meaning in Malayalam → say it), then speaking lessons, a review of your own mistakes and a reward. Unit 4 ends with a full mock interview.
 - **Lesson:** one exchange per screen. The mascot asks (and talks, thinks or cheers), you answer with the big 3D mic, and feedback slides up from the bottom: green "Nice!" or gold "Almost! Say it like this" with the Malayalam explanation and a **Say it out loud** button. You continue only after that. A progress bar sits on top, with a combo flame and hands-free mode.
 - **Lesson complete:** XP, speaking time and no-fix replies count up, the level bar fills, and badges pop in. Next comes the streak screen (first lesson of the day), then saving progress (guests) or tomorrow's teaser plus daily quests.
-- **Practice tab:** full mock interview, **question bank** (drill any single question, with role-specific ones for your job), **My answers** (listen to and say your strongest answers), English warm-up, Mistake Bank, and replaying any round.
-- **Progress tab:** Interview Readiness by area with the countdown, level (Applicant → Shortlisted → … → Offer Ready → Hired), streak and daily goal, quests, and weekly insights.
+- **Practice tab:** full mock interview, **Speaking practice** (answer any single question, by situation), **Phrasebook**, **My best answers**, mistake warm-up, Mistake Bank, and replaying any conversation.
+- **Progress tab:** Job-ready English by situation (and the countdown if an interview date is set), level (Starter → Clear Speaker → Call Ready → Interview Ready → Office Ready → … → Fluent Professional), streak and daily goal, quests, and weekly insights.
 - **Profile tab:** plan, daily goal, reminders, sounds, about you, help and legal.
 
 ## Habit loop (why people come back)

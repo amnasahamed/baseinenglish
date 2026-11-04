@@ -9,7 +9,7 @@ import { identify, normalizePhone, requestOtp, verifyOtp, logout, isFixedCodeNum
 import { transcribe, speak } from './openai.js';
 import { coachTurn, personalOpener, summarizeSession } from './coach.js';
 import { compareSpoken } from './compare.js';
-import { scenarioById, publicScenarios, units, questionBank, roleById } from './scenarios.js';
+import { scenarioById, publicScenarios, units, questionBank, roleById, phraseLessons } from './scenarios.js';
 import { startNudgeScheduler } from './nudges.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -130,7 +130,7 @@ api.post('/settings', (req, res) => {
 });
 
 // ─── Learning path ───────────────────────────────────────────
-const NODE_XP = { chest: 30, trophy: 60 };
+const NODE_XP = { chest: 30, trophy: 60, phrases: 15 };
 function buildPath(userId) {
   const runs = store.nodeRuns(userId);
   let foundCurrent = false;
@@ -150,6 +150,7 @@ function buildPath(userId) {
       const sc = scenarioById[nd.id];
       const base = { id: nd.id, type: nd.type, state, runs: r };
       if (nd.type === 'lesson') return { ...base, title: sc.title, subtitle: sc.subtitle, partner: sc.partnerLabel, xp: 15 };
+      if (nd.type === 'phrases') return { ...base, title: phraseLessons[nd.id].title, subtitle: 'Learn 5 useful sentences — listen and say them', xp: NODE_XP.phrases };
       if (nd.type === 'review') return { ...base, title: 'Fix your mistakes', subtitle: 'A 2-minute warm-up on your own mistakes', xp: 20 };
       return { ...base, title: nd.type === 'trophy' ? 'Unit trophy' : 'Reward chest', subtitle: 'Open it to collect XP', xp: NODE_XP[nd.type] };
     }),
@@ -179,6 +180,23 @@ api.get('/answers', (req, res) => {
   res.json({
     answers: store.answerBank(req.user.id).map((a) => ({ id: a.id, area: a.area, question: a.question, answer: a.answer, polished: a.polished, rating: a.rating, rehearsed: a.rehearsed })),
     readiness: store.readiness(req.user.id),
+  });
+});
+
+api.get('/phrases/:node', (req, res) => {
+  const lesson = phraseLessons[req.params.node];
+  if (!lesson) throw httpError(404, 'Lesson not found');
+  res.json({ id: req.params.node, ...lesson });
+});
+
+/** Phrasebook: phrases from the lessons you've reached + phrases Base taught you in conversations. */
+api.get('/phrasebook', (req, res) => {
+  const runs = store.nodeRuns(req.user.id);
+  const path = buildPath(req.user.id).flatMap((u) => u.nodes);
+  const reached = path.filter((n) => n.type === 'phrases' && n.state !== 'locked').map((n) => n.id);
+  res.json({
+    lessons: reached.map((id) => ({ id, title: phraseLessons[id].title, done: !!runs[id], phrases: phraseLessons[id].phrases })),
+    learned: store.listPhrases(req.user.id),
   });
 });
 
@@ -295,7 +313,7 @@ api.post(
     }
     store.addMessage(session.id, 'partner', opener);
     logEvent(u.id, 'session_start', { scenario: scenario.id }, session.id);
-    res.json({ session: { id: session.id, scenarioId: scenario.id, title: scenario.id === 'drill' ? 'Question practice' : scenario.title, partnerLabel: scenario.partnerLabel, maxTurns: scenario.maxTurns }, opener });
+    res.json({ session: { id: session.id, scenarioId: scenario.id, title: scenario.title, partnerLabel: scenario.partnerLabel, maxTurns: scenario.maxTurns }, opener });
   }),
 );
 
@@ -366,8 +384,9 @@ api.post(
     const done = finalTurn || !!result.conversation_complete;
     const question = [...history].reverse().find((m) => m.role === 'partner')?.text || '';
     const rating = [1, 2, 3].includes(result.rating) ? result.rating : 2;
-    const area = result.question_area && result.question_area !== 'other' ? result.question_area : scenario.areas?.[0];
-    const answerId = area ? store.saveAnswer(u.id, { area, question, answer: transcript, polished: result.stronger_answer, rating }) : null;
+    const area = scenario.area || (result.question_area && result.question_area !== 'other' ? result.question_area : null);
+    const answerId = area ? store.saveAnswer(u.id, { area, question, answer: transcript, polished: result.natural_version, rating }) : null;
+    if (result.phrase_en) store.savePhrase(u.id, result.phrase_en, result.phrase_ml, scenario.title);
     store.addMessage(session.id, 'learner', transcript, { mistakeId: correction?.mistakeId ?? null, lifeline, rating, area });
     store.addMessage(session.id, 'partner', result.reply);
     const counted = store.addPracticeSeconds(u.id, seconds);
@@ -382,7 +401,7 @@ api.post(
       correction,
       praise: result.praise,
       reply: result.reply,
-      coaching: { area, rating, tip: result.tip_en, tipMl: result.tip_ml, stronger: result.stronger_answer, answerId },
+      coaching: { area, rating, phrase: result.phrase_en, phraseMl: result.phrase_ml, natural: result.natural_version, answerId },
       done,
       turn: turnNumber,
       maxTurns: scenario.maxTurns,
@@ -435,7 +454,7 @@ api.post(
     const { fresh: newBadges } = store.badgeStatus(u.id);
     if (fresh.phone) store.markBadgesSeen(u.id, newBadges.map((b) => b.id));
     const sessionAnswers = learnerMsgs.map((m) => m.meta).filter((m) => m.area);
-    const report = scenario.id === 'mock_full' || sessionAnswers.length >= 3
+    const report = scenario.id === 'mock_full'
       ? Object.values(sessionAnswers.reduce((acc, m) => {
           (acc[m.area] ||= { area: m.area, ratings: [] }).ratings.push(m.rating);
           return acc;
@@ -473,7 +492,7 @@ api.post(
   upload.single('audio'),
   wrap(async (req, res) => {
     const target = String(req.body?.target || '').slice(0, 300);
-    const context = ['session', 'bank', 'warmup', 'answer'].includes(req.body?.context) ? req.body.context : 'session';
+    const context = ['session', 'bank', 'warmup', 'answer', 'phrase'].includes(req.body?.context) ? req.body.context : 'session';
     const mistakeId = Number(req.body?.mistakeId) || null;
     if (!target) throw httpError(400, 'Missing target sentence');
     let transcript = '';
@@ -491,7 +510,8 @@ api.post(
     store.addPracticeSeconds(req.user.id, Number(req.body?.durationSec) || 0);
     logEvent(req.user.id, r.pass ? 'retry_pass' : 'retry_fail', { context, score: r.score, attempt: Number(req.body?.attempt) || 1 }, req.body?.sessionId || null);
     let gained = 0;
-    if (r.pass) {
+    if (r.pass && context === 'phrase') gained += store.awardXp(req.user.id, 'bank_pass', 3);
+    else if (r.pass) {
       gained += store.awardXp(req.user.id, context === 'session' ? 'retry_pass' : 'bank_pass');
       if (mastery?.justMastered) gained += store.awardXp(req.user.id, 'mastered');
     }
