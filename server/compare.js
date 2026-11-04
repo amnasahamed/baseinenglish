@@ -42,7 +42,7 @@ function lcs(a, b) {
  * @returns {{pass:boolean, score:number, missing:string[]}}
  *   score = share of target words said in the right order. Extra words/fillers are forgiven.
  */
-export function compareSpoken(spoken, target) {
+export function compareSpoken(spoken, target, { threshold } = {}) {
   const t = normalize(target);
   const s = normalize(spoken).filter((w) => !FILLERS.has(w) || t.includes(w));
   if (!t.length) return { pass: true, score: 1, missing: [] };
@@ -52,6 +52,6 @@ export function compareSpoken(spoken, target) {
   const tooLong = s.length > t.length * 2 + 4;
   const spokenSet = new Set(s);
   const missing = [...new Set(t.filter((w) => !spokenSet.has(w)))];
-  const threshold = t.length <= 5 ? 0.75 : 0.8;
-  return { pass: score >= threshold && !tooLong, score: Math.round(score * 100) / 100, missing: missing.slice(0, 5) };
+  const th = threshold ?? (t.length <= 5 ? 0.75 : 0.8);
+  return { pass: score >= th && !tooLong, score: Math.round(score * 100) / 100, missing: missing.slice(0, 5) };
 }

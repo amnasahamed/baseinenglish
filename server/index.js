@@ -9,7 +9,7 @@ import { identify, normalizePhone, requestOtp, verifyOtp, logout, isFixedCodeNum
 import { transcribe, speak } from './openai.js';
 import { coachTurn, personalOpener, summarizeSession } from './coach.js';
 import { compareSpoken } from './compare.js';
-import { scenarioById, publicScenarios, units } from './scenarios.js';
+import { scenarioById, publicScenarios, units, questionBank, roleById } from './scenarios.js';
 import { startNudgeScheduler } from './nudges.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -64,6 +64,12 @@ function publicUser(u) {
     goals: u.goals,
     plan: u.plan,
     dailyGoalMin: u.daily_goal_min,
+    targetRole: u.target_role,
+    targetRoleLabel: roleById[u.target_role]?.label || null,
+    experience: u.experience,
+    interviewDate: u.interview_date,
+    daysToInterview: store.daysUntil(u.interview_date),
+    company: u.company,
     reminders: !!u.reminders,
     onboarded: !!u.onboarded,
   };
@@ -110,6 +116,7 @@ api.get('/me', (req, res) => {
     freezes: u.freezes,
     quests: store.dailyQuests(u.id),
     nextHook: u.next_hook,
+    readiness: store.readiness(u.id),
     lastScenario: db.prepare('SELECT scenario_id FROM sessions WHERE user_id = ? AND done = 1 ORDER BY started_at DESC LIMIT 1').get(u.id)?.scenario_id || null,
     mock: config.mockAi,
   });
@@ -167,6 +174,19 @@ api.post('/path/:node/complete', (req, res) => {
   res.json({ gained, units: buildPath(req.user.id), level: store.levelFor(store.getUser(req.user.id).xp) });
 });
 
+// ─── Interview prep: answer bank & question bank ─────────────
+api.get('/answers', (req, res) => {
+  res.json({
+    answers: store.answerBank(req.user.id).map((a) => ({ id: a.id, area: a.area, question: a.question, answer: a.answer, polished: a.polished, rating: a.rating, rehearsed: a.rehearsed })),
+    readiness: store.readiness(req.user.id),
+  });
+});
+
+api.get('/questions', (req, res) => {
+  const u = store.getUser(req.user.id);
+  res.json({ areas: questionBank(u.target_role), readiness: store.readiness(u.id) });
+});
+
 api.post('/quests/claim', (req, res) => {
   const gained = store.claimChest(req.user.id);
   if (gained) logEvent(req.user.id, 'chest_claimed');
@@ -206,8 +226,16 @@ api.delete('/me', (req, res) => {
 api.get('/scenarios', (req, res) => res.json(publicScenarios()));
 
 api.post('/profile', (req, res) => {
-  const { name, jobRole, goals } = req.body || {};
-  const u = store.updateProfile(req.user.id, { name, job_role: jobRole, goals });
+  const { name, jobRole, goals, targetRole, experience, interviewDate, company } = req.body || {};
+  const u = store.updateProfile(req.user.id, {
+    name,
+    job_role: jobRole,
+    goals,
+    target_role: roleById[targetRole] ? targetRole : undefined,
+    experience: ['fresher', 'junior', 'senior'].includes(experience) ? experience : undefined,
+    interview_date: interviewDate,
+    company,
+  });
   res.json({ user: publicUser(u) });
 });
 
@@ -256,7 +284,9 @@ api.post(
     const session = store.createSession(u.id, scenario.id);
     const summaries = store.recentSummaries(u.id);
     let opener = scenario.opener;
-    if (u.name || summaries.length) {
+    if (scenario.id === 'drill') {
+      opener = String(req.body?.question || '').trim().slice(0, 200) || scenario.opener;
+    } else if (u.name || u.target_role || summaries.length) {
       try {
         opener = await personalOpener({ scenario, user: u, summaries, topMistakes: store.topMistakeLabels(u.id, 3) });
       } catch (e) {
@@ -265,7 +295,7 @@ api.post(
     }
     store.addMessage(session.id, 'partner', opener);
     logEvent(u.id, 'session_start', { scenario: scenario.id }, session.id);
-    res.json({ session: { id: session.id, scenarioId: scenario.id, title: scenario.title, partnerLabel: scenario.partnerLabel, maxTurns: scenario.maxTurns }, opener });
+    res.json({ session: { id: session.id, scenarioId: scenario.id, title: scenario.id === 'drill' ? 'Question practice' : scenario.title, partnerLabel: scenario.partnerLabel, maxTurns: scenario.maxTurns }, opener });
   }),
 );
 
@@ -334,12 +364,16 @@ api.post(
     if (result.learned?.length) store.updateProfile(u.id, { facts: result.learned });
 
     const done = finalTurn || !!result.conversation_complete;
-    store.addMessage(session.id, 'learner', transcript, { mistakeId: correction?.mistakeId ?? null, lifeline });
+    const question = [...history].reverse().find((m) => m.role === 'partner')?.text || '';
+    const rating = [1, 2, 3].includes(result.rating) ? result.rating : 2;
+    const area = result.question_area && result.question_area !== 'other' ? result.question_area : scenario.areas?.[0];
+    const answerId = area ? store.saveAnswer(u.id, { area, question, answer: transcript, polished: result.stronger_answer, rating }) : null;
+    store.addMessage(session.id, 'learner', transcript, { mistakeId: correction?.mistakeId ?? null, lifeline, rating, area });
     store.addMessage(session.id, 'partner', result.reply);
     const counted = store.addPracticeSeconds(u.id, seconds);
     db.prepare('UPDATE sessions SET user_turns = ?, seconds_spoken = seconds_spoken + ? WHERE id = ?').run(turnNumber, counted, session.id);
     logEvent(u.id, 'turn', { n: turnNumber, corrected: !!correction, sec: counted }, session.id);
-    const gained = store.awardXp(u.id, 'reply') + (correction ? 0 : store.awardXp(u.id, 'clean_reply'));
+    const gained = store.awardXp(u.id, 'reply') + (correction ? 0 : store.awardXp(u.id, 'clean_reply')) + (rating === 3 ? store.awardXp(u.id, 'strong_answer') : 0);
 
     res.json({
       transcript,
@@ -348,6 +382,7 @@ api.post(
       correction,
       praise: result.praise,
       reply: result.reply,
+      coaching: { area, rating, tip: result.tip_en, tipMl: result.tip_ml, stronger: result.stronger_answer, answerId },
       done,
       turn: turnNumber,
       maxTurns: scenario.maxTurns,
@@ -399,9 +434,19 @@ api.post(
     const lvlBefore = store.levelFor(Math.max(0, store.getUser(u.id).xp - sessionXp));
     const { fresh: newBadges } = store.badgeStatus(u.id);
     if (fresh.phone) store.markBadgesSeen(u.id, newBadges.map((b) => b.id));
+    const sessionAnswers = learnerMsgs.map((m) => m.meta).filter((m) => m.area);
+    const report = scenario.id === 'mock_full' || sessionAnswers.length >= 3
+      ? Object.values(sessionAnswers.reduce((acc, m) => {
+          (acc[m.area] ||= { area: m.area, ratings: [] }).ratings.push(m.rating);
+          return acc;
+        }, {})).map((x) => ({ area: x.area, rating: Math.max(...x.ratings) }))
+      : null;
     res.json({
       coachNote,
       nextHook,
+      readiness: store.readiness(u.id),
+      report,
+      avgRating: sessionAnswers.length ? Math.round((sessionAnswers.reduce((a, m) => a + (m.rating || 2), 0) / sessionAnswers.length) * 10) / 10 : null,
       xp: sessionXp,
       levelBefore: lvlBefore,
       level: lvlAfter,
@@ -428,7 +473,7 @@ api.post(
   upload.single('audio'),
   wrap(async (req, res) => {
     const target = String(req.body?.target || '').slice(0, 300);
-    const context = ['session', 'bank', 'warmup'].includes(req.body?.context) ? req.body.context : 'session';
+    const context = ['session', 'bank', 'warmup', 'answer'].includes(req.body?.context) ? req.body.context : 'session';
     const mistakeId = Number(req.body?.mistakeId) || null;
     if (!target) throw httpError(400, 'Missing target sentence');
     let transcript = '';
@@ -436,7 +481,8 @@ api.post(
     else transcript = String(req.body?.text || '').slice(0, 300);
     if (!transcript.trim()) throw httpError(422, "I couldn't hear that. Tap the mic and say it once more.");
 
-    const r = compareSpoken(transcript, target);
+    const r = compareSpoken(transcript, target, { threshold: context === 'answer' ? 0.6 : undefined });
+    if (r.pass && context === 'answer' && Number(req.body?.answerId)) store.markRehearsed(req.user.id, Number(req.body.answerId));
     let mastery = null;
     if (r.pass && mistakeId) {
       const m = store.markSpokenRight(req.user.id, mistakeId);
@@ -484,7 +530,7 @@ api.post(
 );
 
 // ─── Pilot feedback & light analytics ────────────────────────
-const CLIENT_EVENTS = new Set(['correction_feedback', 'retry_skipped', 'replay_partner', 'replay_correction', 'login_prompt_shown', 'login_skipped', 'paywall_shown', 'upgrade_clicked', 'share_progress', 'invite_shared', 'handsfree_on', 'mic_primed', 'sound_off']);
+const CLIENT_EVENTS = new Set(['correction_feedback', 'retry_skipped', 'replay_partner', 'replay_correction', 'login_prompt_shown', 'login_skipped', 'paywall_shown', 'upgrade_clicked', 'share_progress', 'invite_shared', 'handsfree_on', 'mic_primed', 'sound_off', 'stronger_opened']);
 api.post('/events', (req, res) => {
   const type = String(req.body?.type || '');
   if (!CLIENT_EVENTS.has(type)) return res.status(400).json({ error: 'unknown event' });
