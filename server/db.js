@@ -822,3 +822,15 @@ export function savePhrase(userId, en, ml, source) {
 export function listPhrases(userId) {
   return db.prepare('SELECT en, ml, source, created_at FROM phrases WHERE user_id = ? ORDER BY id DESC').all(userId);
 }
+
+export function nodeProgress(userId) {
+  return Object.fromEntries(
+    db.prepare('SELECT node_id, runs, completed_at FROM path_progress WHERE user_id = ?').all(userId).map((r) => [r.node_id, { runs: r.runs, completed_at: r.completed_at }]),
+  );
+}
+
+export function todaysSession(userId, scenarioId) {
+  const rows = db.prepare('SELECT * FROM sessions WHERE user_id = ? AND scenario_id = ? ORDER BY started_at DESC LIMIT 1').all(userId, scenarioId);
+  const s = rows[0];
+  return s && dayOf(new Date(s.started_at)) === dayOf() ? s : null;
+}

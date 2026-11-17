@@ -8,7 +8,7 @@ import path from 'node:path';
 const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'bie-g-'));
 process.env.DATA_DIR = dir;
 process.env.MOCK_AI = '1';
-process.env.OTP_TEST_NUMBERS = '+919000000001,+919000000002';
+process.env.OTP_TEST_NUMBERS = '+919000000001,+919000000002,+919000000003';
 process.env.OTP_TEST_CODE = '111111';
 process.env.OTP_RESEND_SECONDS = '0';
 process.env.FREE_TRIAL_SESSIONS = '2';
@@ -35,7 +35,7 @@ const text = (t) => {
   return f;
 };
 async function practise() {
-  const s = await call('/sessions', { method: 'POST', body: { scenarioId: 'strengths' } });
+  const s = await call('/sessions', { method: 'POST', body: { scenarioId: 'intro_yourself' } });
   await call(`/sessions/${s.data.session.id}/turn`, { method: 'POST', form: text('We discussed about the new project in the meeting.') });
   await call(`/sessions/${s.data.session.id}/end`, { method: 'POST' });
 }
@@ -169,4 +169,43 @@ test('job English: job profile, English-first coaching, readiness, answer & ques
   rehearse.append('answerId', String(top.id));
   assert.equal((await call('/retry', { method: 'POST', form: rehearse })).data.pass, true);
   assert.equal((await call('/answers')).data.answers.find((a) => a.id === top.id).rehearsed, 1);
+});
+
+test('career story: episodes, outcomes, daily unlock and the Base chat', async () => {
+  who = 'b';
+  jar.b = '';
+  await call('/profile', { method: 'POST', body: { targetRole: 'nursing', company: 'Aster' } });
+  const st0 = await call('/story');
+  assert.equal(st0.data.current.id, 'intro_yourself');
+  assert.equal(st0.data.company, 'Aster');
+  assert.match(st0.data.current.setup, /Aster/);
+
+  const ep = async (id) => {
+    const s = await call('/sessions', { method: 'POST', body: { scenarioId: id } });
+    assert.equal(s.status, 200, JSON.stringify(s.data));
+    await call(`/sessions/${s.data.session.id}/turn`, { method: 'POST', form: text('I have completed my BSc Nursing in 2023 from Kochi.') });
+    return call(`/sessions/${s.data.session.id}/end`, { method: 'POST' });
+  };
+  const e1 = await ep('intro_yourself');
+  assert.equal(e1.data.story.outcome.kind, 'whatsapp');
+  assert.equal(e1.data.story.next.id, 'background');
+  await login('+919000000003');
+  await ep('background');
+
+  const st = await call('/story');
+  assert.equal(st.data.current.id, 'work_studies');
+  assert.equal(st.data.current.state, 'tomorrow', 'only two new episodes per day');
+  const blocked = await call('/sessions', { method: 'POST', body: { scenarioId: 'work_studies' } });
+  assert.equal(blocked.status, 409);
+  assert.equal(blocked.data.reason, 'tomorrow');
+  assert.equal((await call('/sessions', { method: 'POST', body: { scenarioId: 'intro_yourself' } })).status, 200, 'replays are unlimited');
+
+  const chat = await call('/chat');
+  assert.ok(chat.data.messages[0].text.length > 5, 'Base opens the chat');
+  const t = await call(`/sessions/${chat.data.session.id}/turn`, { method: 'POST', form: text('I am fine. Yesterday I discussed about my CV with my friend.') });
+  assert.equal(t.data.done, false, 'the chat never ends by itself');
+  assert.ok(t.data.correction);
+  const again = await call('/chat');
+  assert.equal(again.data.session.id, chat.data.session.id, 'one chat thread per day');
+  assert.equal(again.data.messages.length, 3);
 });
