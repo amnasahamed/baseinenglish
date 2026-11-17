@@ -1096,7 +1096,7 @@ async function renderStory() {
   const chapter = st.chapters.find((c) => c.episodes.some((e) => e.id === st.current?.id)) || st.chapters[st.chapters.length - 1];
   $app.append(
     h(`<header class="story-head">
-      <div><div class="sh-k">${me.user.name ? `${esc(me.user.name.split(' ')[0].toUpperCase())}'S` : 'YOUR'} CAREER STORY</div><div class="sh-t">Chapter ${chapter.n} · ${esc(chapter.title)}</div></div>
+      <div><div class="sh-k">${me.user.name ? `${esc(me.user.name.split(' ')[0])}'s career story` : 'Your career story'}</div><div class="sh-t">Chapter ${chapter.n} · ${esc(chapter.title)}</div></div>
       <a class="stat-chip flame ${s.practicedToday ? 'lit' : ''}" href="#/progress" aria-label="${s.streak} day streak">${I.flame(18)}<b>${s.streak}</b></a>
       ${me.user.isGuest ? `<a class="stat-chip login" href="#/login">Log in</a>` : ''}
     </header>`),
@@ -1119,7 +1119,6 @@ async function renderStory() {
     );
   } else {
     const card = h(`<div class="ep-card">
-      <span class="ep-glow"></span>
       <span class="ep-ic">${cur.mode === 'call' ? PHONE_SVG(28, '#F2B33D') : I.mic(28)}</span>
       <div class="ep-k">EPISODE ${cur.n} · TODAY</div>
       <div class="ep-t">${esc(cur.title)}</div>
@@ -1142,7 +1141,7 @@ async function renderStory() {
       <span class="bs-body"><b>Base</b><span class="bs-t">${esc(base?.text || 'Tap to say hi — practise anything with me, any time.')}</span></span>${I.chev(20)}</a>`),
   );
 
-  $app.append(
+  if (st.doneCount > 0) $app.append(
     h(`<div class="mini-stats">
       <div><b>${s.minutesSpoken}</b><span>min of English spoken</span></div>
       <div><b>${me.readiness?.score || 0}<small>%</small></b><span>job-ready English</span></div>
@@ -1416,6 +1415,22 @@ function storyScreen(r) {
     sfx.level();
     buzz([30, 40, 60]);
   }, 250);
+  el._secondary = {
+    label: 'Share this moment',
+    run: () =>
+      shareCard('moment', {
+        name: state.me?.user?.name?.split(' ')[0],
+        n: s.episode.n,
+        title: s.episode.title,
+        ml: s.episode.shareMl,
+        headline: s.headline,
+        outcome: s.outcome,
+        stages: st?.stages,
+        stage: s.milestone === 'offer' ? 4 : Math.max(s.episode.stage, s.next ? s.next.stage : s.episode.stage),
+        minutes: r.stats?.minutesSpoken,
+        readiness: r.readiness?.score,
+      }),
+  };
   return el;
 }
 
@@ -1435,6 +1450,23 @@ function milestoneScreen(r) {
     sfx.level();
     celebrate(isOffer ? 'Offer letter!' : 'First week done!', 'അഭിനന്ദനങ്ങൾ!');
   }, 300);
+  el._secondary = {
+    label: isOffer ? 'Share my offer letter' : 'Share this',
+    run: () =>
+      shareCard(isOffer ? 'offer' : 'moment', {
+        name: state.me?.user?.name?.split(' ')[0],
+        company: s.company,
+        roleTitle: s.roleTitle,
+        n: s.episode.n,
+        title: s.episode.title,
+        ml: s.episode.shareMl,
+        headline: s.headline,
+        stages: state.story?.stages,
+        stage: isOffer ? 4 : 5,
+        minutes: r.stats?.minutesSpoken,
+        readiness: r.readiness?.score,
+      }),
+  };
   return el;
 }
 
@@ -2183,6 +2215,7 @@ function renderComplete(r, scenarioId, { fixes, turns }) {
         sfx.level();
         buzz([30, 40, 60]);
       }, 200);
+      if (r.stats.streak >= 3) el._secondary = { label: 'Share my streak', run: () => shareCard('streak', { name: state.me?.user?.name?.split(' ')[0], streak: r.stats.streak, minutes: r.stats.minutesSpoken, readiness: r.readiness?.score }) };
       return el;
     });
   }
@@ -2214,7 +2247,7 @@ function renderComplete(r, scenarioId, { fixes, turns }) {
       e.currentTarget.outerHTML = `<p class="center small">${I.check(14)} Done — I'll message you if you forget.</p>`;
       sfx.tap();
     });
-    el._secondary = { label: 'Share my progress', run: () => shareProgress(r, words) };
+    el._secondary = { label: 'Share my progress', run: () => shareProgress(r) };
     return el;
   });
 
@@ -2222,7 +2255,7 @@ function renderComplete(r, scenarioId, { fixes, turns }) {
   const show = () => {
     $app.innerHTML = '';
     const screen = steps[i]();
-    const foot = h(`<div class="done-foot"><button class="b3d green block" data-go>${esc(screen._primary?.label || (i < steps.length - 1 ? 'Continue' : 'Continue'))}</button>${screen._secondary ? `<button class="linkish" data-sec>${esc(screen._secondary.label)}</button>` : ''}</div>`);
+    const foot = h(`<div class="done-foot"><button class="b3d green block" data-go>${esc(screen._primary?.label || (i < steps.length - 1 ? 'Continue' : 'Continue'))}</button>${screen._secondary ? `<button class="${/share/i.test(screen._secondary.label) ? 'b3d white block' : 'linkish'}" data-sec>${/share/i.test(screen._secondary.label) ? I.share(18) + ' ' : ''}${esc(screen._secondary.label)}</button>` : ''}</div>`);
     foot.querySelector('[data-go]').addEventListener('click', () => {
       sfx.tap();
       if (screen._primary) return screen._primary.run();
@@ -2754,72 +2787,318 @@ async function renderUpgrade() {
   $app.append(card);
 }
 
-// ─── Share card (Strava-style progress post for stories / WhatsApp) ──
-async function shareProgress(r, words) {
-  track('share_progress');
-  let url = location.origin + '/';
-  if (!state.me?.user?.isGuest) url = (await api('/invite').catch(() => null))?.url || url;
-  await document.fonts?.ready;
-  const c = document.createElement('canvas');
-  c.width = 1080;
-  c.height = 1350;
-  const x = c.getContext('2d');
+// ─── Share cards: 9:16 for WhatsApp Status / Instagram Stories ─────
+// Flat colour, Malayalam headline first, English under it, the mascot, and the link.
+// Three kinds: 'moment' (an episode outcome), 'streak', 'offer'.
+
+const CARD = { w: 1080, h: 1920, pad: 90 };
+
+function drawMascot(x, cx, cy, r) {
+  // body
   x.fillStyle = '#0E5A4A';
-  x.fillRect(0, 0, 1080, 1350);
-  x.strokeStyle = '#1A6E5C';
-  x.lineWidth = 80;
   x.beginPath();
-  x.arc(980, 160, 260, 0, Math.PI * 2);
-  x.stroke();
-  x.fillStyle = '#E2A93B';
-  x.fillRect(90, 150, 140, 8);
-  x.fillRect(90, 168, 140, 4);
-  x.fillStyle = '#FBF6EC';
-  x.font = '800 64px "Bricolage Grotesque", sans-serif';
-  x.fillText('base.', 90, 120);
-  x.font = '800 34px Manrope, sans-serif';
-  x.fillStyle = '#CFE4DC';
-  x.fillText('I SPOKE ENGLISH OUT LOUD FOR', 90, 300);
-  const sec = Math.round(r.secondsSpoken);
-  x.fillStyle = '#FBF6EC';
-  x.font = '800 260px "Bricolage Grotesque", sans-serif';
-  const big = sec >= 60 ? `${Math.floor(sec / 60)}:${String(sec % 60).padStart(2, '0')}` : String(sec);
-  x.fillText(big, 80, 560);
-  const bw = x.measureText(big).width;
-  x.fillStyle = '#E2A93B';
-  x.font = '800 72px "Bricolage Grotesque", sans-serif';
-  x.fillText(sec >= 60 ? 'min' : 'sec', 100 + bw, 560);
-  x.fillStyle = '#FBF6EC';
-  x.font = '700 48px Manrope, sans-serif';
-  x.fillText(`${r.stats.streak}-day streak  ·  ${r.turns} replies  ·  ${r.mistakes.length} fixes`, 90, 690);
-  if (words.length) {
-    x.font = '600 44px "Baloo Chettan 2", sans-serif';
-    x.fillStyle = '#E2A93B';
-    x.fillText(`New word: ${words[0].said} → ${words[0].english}`, 90, 790);
+  x.ellipse(cx, cy + r * 0.08, r, r * 0.96, 0, 0, Math.PI * 2);
+  x.fill();
+  // leaf
+  x.fillStyle = '#6CC24A';
+  x.beginPath();
+  x.ellipse(cx - r * 0.18, cy - r * 0.98, r * 0.3, r * 0.14, -0.6, 0, Math.PI * 2);
+  x.fill();
+  x.beginPath();
+  x.ellipse(cx + r * 0.18, cy - r * 0.98, r * 0.3, r * 0.14, 0.6, 0, Math.PI * 2);
+  x.fill();
+  // eyes
+  for (const dx of [-0.26, 0.26]) {
+    x.fillStyle = '#FFFFFF';
+    x.beginPath();
+    x.ellipse(cx + dx * r, cy - r * 0.12, r * 0.13, r * 0.19, 0, 0, Math.PI * 2);
+    x.fill();
+    x.fillStyle = '#14211E';
+    x.beginPath();
+    x.ellipse(cx + dx * r + r * 0.02, cy - r * 0.08, r * 0.07, r * 0.1, 0, 0, Math.PI * 2);
+    x.fill();
   }
-  x.fillStyle = '#E2A93B';
+  // cheeks
+  x.fillStyle = 'rgba(245,154,122,0.7)';
+  for (const dx of [-0.5, 0.5]) {
+    x.beginPath();
+    x.ellipse(cx + dx * r, cy + r * 0.22, r * 0.12, r * 0.07, 0, 0, Math.PI * 2);
+    x.fill();
+  }
+  // smile
+  x.fillStyle = '#F2B33D';
   x.beginPath();
-  x.roundRect(60, 1080, 960, 200, 40);
+  x.arc(cx, cy + r * 0.28, r * 0.24, 0, Math.PI);
+  x.fill();
+}
+
+function wrapText(x, text, maxW) {
+  const words = String(text).split(/\s+/);
+  const lines = [];
+  let line = '';
+  for (const w of words) {
+    const t = line ? line + ' ' + w : w;
+    if (x.measureText(t).width > maxW && line) {
+      lines.push(line);
+      line = w;
+    } else line = t;
+  }
+  if (line) lines.push(line);
+  return lines;
+}
+
+/** Shrink a font until the text fits maxW (down to minPx). Returns the px size used. */
+function fitFont(x, text, family, weight, px, maxW, minPx) {
+  let size = px;
+  for (;;) {
+    x.font = `${weight} ${size}px ${family}`;
+    if (x.measureText(text).width <= maxW || size <= minPx) return size;
+    size -= 4;
+  }
+}
+
+function kasavu(x, left, top, width) {
+  x.fillStyle = '#F2B33D';
+  x.fillRect(left, top, width, 10);
+  x.fillRect(left, top + 20, width, 5);
+}
+
+async function buildCard(kind, d) {
+  await Promise.all([
+    document.fonts?.load('800 120px "Bricolage Grotesque"'),
+    document.fonts?.load('700 120px "Baloo Chettan 2"'),
+    document.fonts?.load('700 40px Manrope'),
+  ]).catch(() => {});
+  const c = document.createElement('canvas');
+  c.width = CARD.w;
+  c.height = CARD.h;
+  const x = c.getContext('2d');
+  const { w, h, pad } = CARD;
+  const name = d.name || '';
+
+  // Ground + a bold colour block: cream page, green (moment) / ink (streak) / cream letter (offer)
+  x.fillStyle = '#F7F1E6';
+  x.fillRect(0, 0, w, h);
+  const blockColor = kind === 'streak' ? '#14211E' : '#0E5A4A';
+  x.fillStyle = blockColor;
+  x.fillRect(0, 0, w, 1260);
+
+  // wordmark
+  x.fillStyle = '#F7F1E6';
+  x.font = '800 60px "Bricolage Grotesque", sans-serif';
+  x.fillText('base', pad, 150);
+  const bw = x.measureText('base').width;
+  x.fillStyle = '#F2B33D';
+  x.fillText('.', pad + bw, 150);
+  x.fillStyle = '#BFD3CC';
+  x.font = '700 34px Manrope, sans-serif';
+  x.fillText(name ? `${name.toUpperCase()}'S CAREER STORY` : 'MY CAREER STORY', pad, 215);
+  kasavu(x, pad, 250, 220);
+
+  drawMascot(x, w - pad - 150, 230, 120);
+
+  if (kind === 'streak') {
+    x.fillStyle = '#F2B33D';
+    x.font = '800 420px "Bricolage Grotesque", sans-serif';
+    x.fillText(String(d.streak), pad - 10, 760);
+    const nw = x.measureText(String(d.streak)).width;
+    x.fillStyle = '#F7F1E6';
+    x.font = '800 70px "Bricolage Grotesque", sans-serif';
+    x.fillText('days', pad + nw + 20, 740);
+    x.font = '700 92px "Baloo Chettan 2", sans-serif';
+    x.fillStyle = '#F7F1E6';
+    x.fillText(d.streak >= 7 ? 'ഒരാഴ്ചയായി ദിവസവും English!' : 'ദിവസവും English സംസാരിക്കുന്നു', pad, 900);
+    x.font = '600 46px Manrope, sans-serif';
+    x.fillStyle = '#BFD3CC';
+    wrapText(x, `${d.streak} days in a row of speaking English out loud — for a better job.`, w - pad * 2).forEach((l, i) => x.fillText(l, pad, 990 + i * 60));
+  } else if (kind === 'offer') {
+    x.fillStyle = '#F2B33D';
+    x.font = '700 36px Manrope, sans-serif';
+    x.fillText('CHAPTER 3 COMPLETE', pad, 380);
+    x.fillStyle = '#F7F1E6';
+    fitFont(x, 'ഓഫർ ലെറ്റർ കിട്ടി!', '"Baloo Chettan 2", sans-serif', 700, 118, w - pad * 2, 70);
+    x.fillText('ഓഫർ ലെറ്റർ കിട്ടി!', pad, 520);
+    x.font = '800 86px "Bricolage Grotesque", sans-serif';
+    x.fillText('I got the offer.', pad, 630);
+    // letter
+    x.save();
+    x.translate(w / 2, 920);
+    x.rotate(-0.035);
+    x.fillStyle = '#FFFDF8';
+    x.shadowColor = 'rgba(0,0,0,0.35)';
+    x.shadowBlur = 50;
+    x.shadowOffsetY = 24;
+    x.beginPath();
+    x.roundRect(-420, -190, 840, 400, 22);
+    x.fill();
+    x.shadowColor = 'transparent';
+    x.fillStyle = '#0E5A4A';
+    x.font = '800 30px "Bricolage Grotesque", sans-serif';
+    x.fillText(String(d.company || '').toUpperCase(), -360, -120);
+    kasavu(x, -360, -95, 160);
+    x.fillStyle = '#14211E';
+    x.font = '500 34px Manrope, sans-serif';
+    wrapText(x, `Dear ${name || 'candidate'}, we are pleased to offer you the role of ${d.roleTitle || 'our new hire'}.`, 720).forEach((l, i) => x.fillText(l, -360, 0 + i * 46));
+    x.fillStyle = '#F2B33D';
+    x.beginPath();
+    x.arc(360, -150, 58, 0, Math.PI * 2);
+    x.fill();
+    x.restore();
+  } else {
+    x.fillStyle = '#F2B33D';
+    x.font = '700 36px Manrope, sans-serif';
+    x.fillText(`EPISODE ${d.n} · ${String(d.title || '').toUpperCase()}`, pad, 380);
+    x.fillStyle = '#F7F1E6';
+    const mlText = d.ml || 'ഒരു എപ്പിസോഡ് കൂടി കഴിഞ്ഞു!';
+    const mlSize = fitFont(x, mlText, '"Baloo Chettan 2", sans-serif', 700, 112, w - pad * 2, 76);
+    const mlLines = x.measureText(mlText).width <= w - pad * 2 ? [mlText] : wrapText(x, mlText, w - pad * 2).slice(0, 2);
+    mlLines.forEach((l, i) => x.fillText(l, pad, 520 + i * (mlSize + 18)));
+    x.font = '800 72px "Bricolage Grotesque", sans-serif';
+    wrapText(x, d.headline || '', w - pad * 2).slice(0, 2).forEach((l, i) => x.fillText(l, pad, 800 + i * 84));
+    // the notification that arrived
+    if (d.outcome) {
+      x.fillStyle = '#FFFFFF';
+      x.beginPath();
+      x.roundRect(pad, 960, w - pad * 2, 170, 28);
+      x.fill();
+      x.fillStyle = '#6F6656';
+      x.font = '700 28px Manrope, sans-serif';
+      x.fillText(d.outcome.kind === 'mail' ? 'MAIL · JUST NOW' : d.outcome.kind === 'whatsapp' ? 'WHATSAPP · JUST NOW' : 'JUST NOW', pad + 36, 1010);
+      x.fillStyle = '#14211E';
+      x.font = '800 34px Manrope, sans-serif';
+      x.fillText(d.outcome.from + (d.outcome.subject ? `: ${d.outcome.subject}` : ''), pad + 36, 1058);
+      x.fillStyle = '#4A5A55';
+      x.font = '500 30px Manrope, sans-serif';
+      x.fillText(wrapText(x, d.outcome.text, w - pad * 2 - 72)[0] + '…', pad + 36, 1104);
+    }
+  }
+
+  // career track (bottom of the block)
+  if (d.stages) {
+    const n = d.stages.length;
+    const left = pad;
+    const right = w - pad;
+    const y = 1180;
+    const step = (right - left) / (n - 1);
+    x.strokeStyle = 'rgba(255,255,255,0.25)';
+    x.lineWidth = 6;
+    x.beginPath();
+    x.moveTo(left, y);
+    x.lineTo(right, y);
+    x.stroke();
+    d.stages.forEach((label, i) => {
+      const cx = left + step * i;
+      x.fillStyle = i < d.stage ? '#2FB37C' : i === d.stage ? '#F2B33D' : blockColor;
+      x.strokeStyle = i <= d.stage ? x.fillStyle : 'rgba(255,255,255,0.4)';
+      x.lineWidth = 5;
+      x.beginPath();
+      x.arc(cx, y, 16, 0, Math.PI * 2);
+      x.fill();
+      x.stroke();
+    });
+    x.fillStyle = '#BFD3CC';
+    x.font = '700 24px Manrope, sans-serif';
+    x.textAlign = 'center';
+    d.stages.forEach((label, i) => x.fillText(label, left + step * i, y + 48));
+    x.textAlign = 'left';
+  }
+
+  // bottom: stats + CTA
+  x.fillStyle = '#14211E';
+  x.font = '800 44px "Bricolage Grotesque", sans-serif';
+  const stats = [];
+  if (d.minutes != null && Math.round(d.minutes) >= 1) stats.push(`${Math.round(d.minutes)} min of English spoken`);
+  if (d.phrases != null) stats.push(`${d.phrases} phrases learned`);
+  if (d.readiness != null) stats.push(`${d.readiness}% job-ready English`);
+  stats.slice(0, 3).forEach((s, i) => {
+    x.fillStyle = '#0E5A4A';
+    x.beginPath();
+    x.arc(pad + 14, 1350 + i * 72 - 14, 10, 0, Math.PI * 2);
+    x.fill();
+    x.fillStyle = '#14211E';
+    x.fillText(s, pad + 44, 1350 + i * 72);
+  });
+
+  x.fillStyle = '#F2B33D';
+  x.beginPath();
+  x.roundRect(pad, 1560, w - pad * 2, 230, 36);
   x.fill();
   x.fillStyle = '#14211E';
-  x.font = '800 54px "Bricolage Grotesque", sans-serif';
-  x.fillText('Learn English for your job — free', 110, 1170);
-  x.font = '700 38px Manrope, sans-serif';
-  x.fillText(url.replace(/^https?:\/\//, ''), 110, 1235);
-  const blob = await new Promise((res) => c.toBlob(res, 'image/png'));
-  const file = new File([blob], 'my-english-progress.png', { type: 'image/png' });
-  const text = `I spoke English for ${big} ${sec >= 60 ? 'min' : 'sec'} today with Base — learning English for a better job! Learn with me: ${url}`;
-  try {
-    if (navigator.canShare?.({ files: [file] })) return await navigator.share({ files: [file], text });
-    if (navigator.share) return await navigator.share({ text, url });
-  } catch (e) {
-    if (e.name === 'AbortError') return;
-  }
-  const a = document.createElement('a');
-  a.href = URL.createObjectURL(blob);
-  a.download = file.name;
-  a.click();
-  toast('Image saved — post it to your WhatsApp status or Instagram story!');
+  x.font = '700 50px "Baloo Chettan 2", sans-serif';
+  x.fillText('നല്ല ജോലിക്ക് നല്ല English', pad + 44, 1650);
+  x.font = '800 40px "Bricolage Grotesque", sans-serif';
+  x.fillText('Start your own career story — free', pad + 44, 1710);
+  x.font = '700 32px Manrope, sans-serif';
+  x.fillStyle = '#5A3D07';
+  x.fillText(d.url.replace(/^https?:\/\//, ''), pad + 44, 1762);
+  return c;
+}
+
+async function shareCard(kind, d) {
+  track('share_card', { kind });
+  let url = location.origin + '/';
+  if (!state.me?.user?.isGuest) url = (await api('/invite').catch(() => null))?.url || url;
+  const canvas = await buildCard(kind, { ...d, url });
+  const blob = await new Promise((res) => canvas.toBlob(res, 'image/png'));
+  const file = new File([blob], `base-${kind}.png`, { type: 'image/png' });
+  const text = kind === 'offer' ? `I got the offer in my career story on Base — learning English for a better job. Start yours: ${url}`
+    : kind === 'streak' ? `${d.streak} days in a row of speaking English with Base. Learn with me: ${url}`
+    : `${d.headline} — Episode ${d.n} of my career story on Base. Start yours: ${url}`;
+  openShareSheet({ canvas, file, text, url });
+}
+
+/** A preview of the card + one-tap share targets (Web Share with the image; fallback: download). */
+function openShareSheet({ canvas, file, text, url }) {
+  document.querySelector('.share-sheet')?.remove();
+  const preview = canvas.toDataURL('image/jpeg', 0.85);
+  const canFiles = !!navigator.canShare?.({ files: [file] });
+  const el = h(`<div class="sheet-wrap share-sheet" role="dialog" aria-modal="true" aria-label="Share">
+    <div class="sheet share">
+      <img src="${preview}" alt="Your share card" class="share-prev" />
+      <div class="share-row">
+        <button class="b3d green block" data-share>${I.share(20)} ${canFiles ? 'Share to WhatsApp Status, Instagram…' : 'Save image'}</button>
+        <a class="b3d white block" data-wa href="https://wa.me/?text=${encodeURIComponent(text)}" target="_blank" rel="noopener">${I.chat(20)} Send on WhatsApp</a>
+      </div>
+      <button class="linkish" data-close>Close</button>
+    </div></div>`);
+  const close = () => el.remove();
+  el.querySelector('[data-close]').addEventListener('click', close);
+  el.addEventListener('click', (e) => e.target === el && close());
+  el.querySelector('[data-wa]').addEventListener('click', () => track('invite_shared', { via: 'whatsapp_card' }));
+  el.querySelector('[data-share]').addEventListener('click', async () => {
+    try {
+      if (canFiles) {
+        await navigator.share({ files: [file], text });
+        sfx.success();
+        close();
+        return;
+      }
+    } catch (e) {
+      if (e.name === 'AbortError') return;
+    }
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(file);
+    a.download = file.name;
+    a.click();
+    toast('Saved. Post it to your WhatsApp Status or Instagram story.');
+  });
+  document.body.append(el);
+}
+
+// Kept for the Me tab "share my progress" button.
+async function shareProgress(r) {
+  const st = state.story;
+  return shareCard('moment', {
+    name: state.me?.user?.name?.split(' ')[0],
+    n: st?.doneCount || 0,
+    title: 'my progress',
+    ml: 'ദിവസവും English സംസാരിക്കുന്നു',
+    headline: `${state.me?.stats?.minutesSpoken || 0} minutes of English, out loud.`,
+    stages: st?.stages,
+    stage: st?.stage || 0,
+    minutes: state.me?.stats?.minutesSpoken,
+    readiness: state.me?.readiness?.score,
+  });
 }
 
 // ─── Boot ────────────────────────────────────────────────────

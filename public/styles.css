@@ -1125,3 +1125,34 @@ body.call-ui .fb-sheet.good::before { content: 'BASE'; color: var(--leaf-d); }
 .me-head { display: flex; align-items: center; justify-content: space-between; }
 .me-head .b3d { min-height: 44px; padding: 8px 14px; font-size: 13px; }
 .pt-links { display: flex; flex-direction: column; }
+
+/* ══════════ De-slop pass: flat surfaces, no glows, honest labels ══════════ */
+.incoming { background: #0b1714; }
+.incoming::before { content: ''; position: absolute; left: 0; right: 0; top: 0; height: 46%; background: #13261f; border-radius: 0 0 48% 48% / 0 0 18% 18%; z-index: -1; }
+.incoming { position: relative; }
+.lesson.call-mode { background: #0f1f1a; }
+.milestone { background: #0f1f1a; }
+.ic-init, .caller-av { background: #f2b33d; }
+.sh-k { letter-spacing: 0; text-transform: none; font-size: 13px; color: var(--muted); }
+.ep-tags span { border-radius: 10px; }
+.stat-chip { border-radius: 12px; }
+.ep-card { box-shadow: none; border-radius: 24px; }
+.ep-card .ep-ic { border-radius: 14px; }
+.base-strip { box-shadow: none; border: 2px solid var(--stone); }
+.mini-stats div { box-shadow: none; border: 2px solid var(--stone); }
+.ep-row { border-radius: 14px; }
+.notif { box-shadow: 0 10px 30px rgba(20, 33, 30, 0.14); border: 1px solid var(--stone); }
+.learned, .next-ep { box-shadow: none; }
+.learned { border: 2px solid var(--stone); }
+.lv-bar i { background: var(--gold2); }
+.m-body { background: #1a8a63; }
+.w-sky { background: #dff1e8; }
+
+/* Share sheet */
+.sheet.share { text-align: left; padding-top: 18px; }
+.share-prev { display: block; width: 190px; margin: 0 auto 14px; border-radius: 14px; box-shadow: 0 14px 34px rgba(20, 33, 30, 0.25); }
+.share-row { display: flex; flex-direction: column; gap: 4px; }
+.share-sheet .linkish { display: block; margin: 4px auto 0; }
+/* Watermark on screenshot-worthy screens so screenshots carry the brand */
+.story-end::after, .milestone::after { content: 'base. · English for your job'; display: block; text-align: center; font-family: var(--display); font-weight: 800; font-size: 12px; letter-spacing: 0.06em; color: var(--muted); opacity: 0.8; margin-top: 10px; }
+.milestone::after { color: #8fa8a0; }

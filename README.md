@@ -100,6 +100,17 @@ The learner is the main character of their own job hunt, in the kind of job they
 - **Phrases tab:** phrasebook, speaking practice, my best answers, mistake warm-up and Mistake Bank. Optional "Prep with Base" phrase lessons appear before key episodes.
 - **Me tab:** job-ready English score, level, streak, quests, weekly insights and settings.
 
+## Design principles (research-backed, keep these)
+
+Based on Duolingo's own write-ups on share cards and streak milestones, and the current "anti-slop" UI rule sets:
+
+1. **Design the share moment, not just the screen.** Every episode ending, streak milestone and the offer letter has a one-tap share card (9:16 for WhatsApp Status / Instagram Stories), with the **Malayalam headline first**, the career track, honest stats and the learner's invite link. Shares use the Web Share API with the image, falling back to a download. Screenshot-worthy screens carry a small "base." watermark.
+2. **No fake data, no filler.** Stats appear only when they are real (the home stat row is hidden until the first episode is done). Labels say what the thing is; no decorative eyebrows.
+3. **Flat, confident surfaces.** No glows, gradient washes or glassmorphism. Colour blocks, the kasavu double stripe and chunky 3D buttons carry the brand. Tags are soft rectangles, not pills everywhere.
+4. **Type with a point of view.** Bricolage Grotesque for display, Manrope for reading, Baloo Chettan 2 for every Malayalam line. Malayalam is the "inside language": it leads on headlines and share cards.
+5. **Motion confirms, never decorates.** Springs and haptics only on things the learner did (sent, got it right, levelled up). Reduced-motion is respected; nothing is conveyed by motion alone.
+6. **Personality in every message.** Base talks like a friend from Kerala, not a product. Reminders and chat openers are written from what Base remembers about the learner.
+
 ## Habit loop (why people come back)
 
 Borrowed from the best habit apps, tuned to be encouraging rather than guilt-driven:

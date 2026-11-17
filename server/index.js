@@ -595,7 +595,7 @@ api.post(
 );
 
 // ─── Pilot feedback & light analytics ────────────────────────
-const CLIENT_EVENTS = new Set(['correction_feedback', 'retry_skipped', 'replay_partner', 'replay_correction', 'login_prompt_shown', 'login_skipped', 'paywall_shown', 'upgrade_clicked', 'share_progress', 'invite_shared', 'handsfree_on', 'mic_primed', 'sound_off', 'stronger_opened']);
+const CLIENT_EVENTS = new Set(['correction_feedback', 'retry_skipped', 'replay_partner', 'replay_correction', 'login_prompt_shown', 'login_skipped', 'paywall_shown', 'upgrade_clicked', 'share_progress', 'invite_shared', 'handsfree_on', 'mic_primed', 'sound_off', 'stronger_opened', 'share_card']);
 api.post('/events', (req, res) => {
   const type = String(req.body?.type || '');
   if (!CLIENT_EVENTS.has(type)) return res.status(400).json({ error: 'unknown event' });
